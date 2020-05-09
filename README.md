@@ -9,7 +9,7 @@
 Davide Vespasiani dvespasiani@student.unimelb.edu.au
 
 ## Repository content
-This repo contains (among the others) all scripts used to perform the analyses
+This repo contains all scripts used to perform the analyses (See ./code/R_scripts)
 
 ## Manuscript
 Detailed description of the work and results is available at: 
