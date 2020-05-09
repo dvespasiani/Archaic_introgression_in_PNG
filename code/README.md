@@ -20,7 +20,7 @@ wget -r --no-parent -A '*coreMarks_mnemonics.bed.gz*' https://egg2.wustl.edu/roa
 * Annotate SNPs across genome (VEP) and chromatin functional elements, comparing SNPs impact across cells
 * Evaluate the function of regulatory variants via motifbreakR retrieving DNA motifs from Jaspar 2018, HOCOMOCO v.10 and ENCODE databases.
 * Retrieve the set of regulated genes and compare their functions among ancestries
-* Gene regulatory networks was generated using the stringApp v1.3.0 in Cytoscape v 3.7.1
+* Gene regulatory networks was generated using the stringApp v 1.3.0 in Cytoscape v 3.7.1
 
 ## Main packages used
 * data.table (v 1.11.8)
