@@ -1,5 +1,5 @@
 ## Scripts
-* All analyses used the R module: R-bundle-Bioconductor/3.7-intel-2018.u4-R-3.5.1 on Spartan.
+* All analyses used the modules: R-bundle-Bioconductor/3.7-intel-2018.u4-R-3.5.1 and web_proxy on Spartan.
 * All SNPs input/output are in GRCh37/hg19 coordinates
 
 ### command line used:
