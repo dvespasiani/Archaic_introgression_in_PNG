@@ -9,24 +9,50 @@ setDTthreads(10)
 setwd('/data/projects/punim0586/dvespasiani/Files/PNG/')
 
 merging_keys=c('seqnames','start','end')
-
+motif_cluster_dir='./Motifbreak/Motifs_clusters/'
 
 gtex_expr=fread('./GTEx/GTEx_Analysis_v8_gene_median_tmp/GTEx_Analysis_2017-06-05_v8_RNASeQCv1.1.9_gene_median_tpm.gct',sep='\t',header = T)
-gene_ids=gtex_expr[,c(1:2)]
+gene_ids=gtex_expr[,c(1:2)] 
 
 ## get motif clusters
-motifs_clusters=fread('./Motifbreak/Motifs_clusters/motifs_vierstra',sep=' ',header = T,select = c('Cluster','geneSymbol'))
-motifs_clusters=semi_join(motifs_clusters,gene_ids,by=c('geneSymbol'='Description')) %>%as.data.table()
 
+## Add vierstra clusters
+clusters=function(clusters,cluster_names){
+  df=fread(paste0(motif_cluster_dir,clusters,sep=''),sep=' ',header = T,select = c('Cluster','Motif'))
+  
+  df_names=fread(paste0(motif_cluster_dir,'motif_cluster_names',sep=''),sep='\t',header = T,select = c('Name','Cluster','Seed_motif'))[
+    ,motif_name:=gsub('_.*','',Seed_motif)
+    ][
+      ,Seed_motif:=NULL]
+  
+  df_combined=inner_join(df,df_names,by='Cluster') %>% as.data.table()
+  df_combined=df_combined[,symbol:=toupper(gsub('_.*','',Motif))]
+  
+  df_combined1=copy(df_combined)[,c(1:4)]
+  df_combined2=copy(df_combined)[,4:=NULL]
+  colnames(df_combined2)[4]='motif_name'
+  
+  df_combined_final=rbind(df_combined1,df_combined2) %>% unique()
+  df_combined_final=df_combined_final[!motif_name%like%'mouse' ][!motif_name%like%'MOUSE']
+  
+  df_combined_final=semi_join(df_combined_final,gene_ids,by=c('motif_name'='Description')) %>%as.data.table() %>% unique()
+  return(df_combined_final)
+}
+
+
+motif_clusters=clusters('motifs_vierstra','motif_cluster_names')
+# motifs_clusters=fread('./Motifbreak/Motifs_clusters/motifs_vierstra',sep=' ',header = T,select = c('Cluster','geneSymbol'))
+# motifs_clusters=semi_join(motifs_clusters,gene_ids,by=c('geneSymbol'='Description')) %>%as.data.table()
+# 
 motifs_cluster_names=fread('./Motifbreak/Motifs_clusters/motif_cluster_names',sep='\t',header = T,select = c('Name','Cluster','Seed_motif'))
-motifs_cluster_names=motifs_cluster_names[!Seed_motif%like%'mouse'][!Seed_motif%like%'MOUSE']
-## [,Seed_motif:=gsub('_.*','',Seed_motif)][!Seed_motif%like%'mouse']
+motifs_cluster_names=motifs_cluster_names[!Seed_motif%like%'mouse'][!Seed_motif%like%'MOUSE'][,Seed_motif:=gsub('_.*','',Seed_motif)][!Seed_motif%like%'mouse']
+
 
 tfbs=function(x){
   x=as.character(list.files(x,full.names = T,recursive = F)) %>% 
     lapply(function(y)
       fread(y,sep=' ',header = T,
-            select =c('seqnames','start','end','REF','ALT','geneSymbol','effect')) %>% unique())
+            select =c('seqnames','start','end','REF','ALT','geneSymbol','providerName','effect')) %>% unique())
   x=lapply(x,function(y)
     y=y[
       ,duplicated_effect:=.N,by=.(seqnames,start,end,geneSymbol)
@@ -37,7 +63,11 @@ tfbs=function(x){
   x=lapply(x,function(y)y=semi_join(y,gene_ids,by=c('geneSymbol'='Description')) %>% ## remove TFs absent from gtex (only D/OBOXs)
                          as.data.table()) 
   
-  x=lapply(x,function(y)y=y[,c('effect','duplicated_effect'):=NULL])
+  x=lapply(x,function(y)y=y[!providerName%like%'disc'][,c('providerName','effect','duplicated_effect'):=NULL][
+    ,geneSymbol:=toupper(geneSymbol)
+    ][
+      , geneSymbol:=gsub('::', '+', geneSymbol)
+      ] %>% unique())
   
   
   pop_names=c('denisova','neandertal','png')
@@ -48,13 +78,16 @@ tfbs=function(x){
 }
 
 snps_tfbs=tfbs('./Motifbreak/Tx_and_CREs/TFBSs_disrupted_10neg5/combined/')
-snps_tfbs=lapply(snps_tfbs,function(x)inner_join(x,motifs_clusters,by='geneSymbol') %>% dplyr::select(-'geneSymbol') %>% 
-                   as.data.table() %>% unique())
+
+
+snps_tfbs=lapply(snps_tfbs,function(x)inner_join(x,motif_clusters,by=c('geneSymbol'='motif_name'))%>% as.data.table() %>% unique())
 
 ## count number SNPs per pop per tf
 snp_matrix=function(x,pop){
   snp_count=function(x){
-    df=copy(x) 
+    df=copy(x)
+   
+    df=lapply(df,function(x)x=x[,c('seqnames','start','end','Cluster')] %>% unique())
     df=lapply(df,function(y)y=unique(y)[,numbsnps:=.N,by=.(Cluster)][,totsnps:=.N][,c('Cluster','numbsnps','totsnps')] %>% unique())
     df=Map(mutate,df,'pop'=names(df))
     
@@ -76,10 +109,11 @@ snp_matrix=function(x,pop){
                                   ][
                                     ,c('Cluster','log2_fold_enrichment','tot_asnps_tf','tot_asnps','tot_nasnps','tot_nasnps_tf','tot_snps_tf')
                                     ]%>% unique()
+    
     df_final=df_final[
       ,pval:=phyper(tot_asnps_tf-1,tot_snps_tf,tot_nasnps,tot_asnps,lower.tail = F) # this calculates the p value of having a >= numb aSNPs targeting a tf given a total number of aSNPs, naSNPs
       ][
-        ,adj_p:=p.adjust(pval, method="BH")
+        ,adj_p:=p.adjust(pval, method="bonferroni")
         ][
           ,log10_p_adjust:=-log10(adj_p)
           ][
@@ -93,7 +127,9 @@ snp_matrix=function(x,pop){
                 ,c('Cluster','log2_fold_enrichment','pval','adj_p','significant_score','log10_p_adjust','log10_tot_asnps_tf')
                 ]%>% setorderv('log10_p_adjust',-1)
     
+    
     df_final=inner_join(df_final,motifs_cluster_names,by='Cluster') %>% as.data.table()
+    
     
   }
   
@@ -115,6 +151,7 @@ snp_matrix=function(x,pop){
 denisova_matrix=snp_matrix(snps_tfbs,'deni')
 neandertal_matrix=snp_matrix(snps_tfbs,'nean')
 
+
 ## table p values
 export_pvalues=function(x){
 df=copy(x)[,c(1,8,9,2:5)] %>% unique()
@@ -126,9 +163,6 @@ neandertal_pval=export_pvalues(neandertal_matrix)
 pvals=list(denisova_pval,neandertal_pval)
 
 write.xlsx(pvals,'/home/dvespasiani/pvalue_tables/Supp_Table_TFs_hypergeom_pvalues.xlsx')
-
-# mock=data.table(geneSymbol='mock',log2_fold_enrichment=0,pval=0,adj_p=0,significant_score=' ',log10_p_adjust=0,log10_tot_asnps_tf=0)
-# denisova_matrix=rbind(denisova_matrix,mock) ## add a mock line to have a full legend in the plot 
 
 ## plot
 tf_enrich_plot=function(x){
