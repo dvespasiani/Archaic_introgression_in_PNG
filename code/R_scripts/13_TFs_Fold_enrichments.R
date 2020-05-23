@@ -55,46 +55,73 @@ motif_id=fread(paste0(motif_cluster_dir,'motifs_ids',sep=''),sep='\t',header = T
 motifs=inner_join(motif,motif_id,by='Cluster') %>% as.data.table()
 
 
-combine_results=function(x){
+tf_cluster=function(x,db){
+  # df=rbind(jaspar_snps_motifbreak,encode_snps_motifbreak,hocomoco_snps_motifbreak)
+  # df$motifPos=vapply(df$motifPos, function(x) paste(x, collapse = ","), character(1L))
   df=copy(x)
   df=lapply(df,function(y)y=y[
-    ,geneSymbol:=toupper(geneSymbol)
-    ][
-      ,geneSymbol:=gsub("\\(VAR.2)", "", geneSymbol)
+      ,geneSymbol:=toupper(geneSymbol)
       ][
-        ,geneSymbol:=gsub("\\(VAR.3)", "", geneSymbol)
+        ,geneSymbol:=gsub("\\(VAR.2)", "", geneSymbol)
         ][
-          ,geneSymbol:=gsub('::', '+', geneSymbol)
-          ][!providerName%like%'disc'][
-            ,providerName:=gsub('_.*','',providerName)
-            ] %>% unique()  )
+          ,geneSymbol:=gsub("\\(VAR.3)", "", geneSymbol)
+          ][
+            ,geneSymbol:=gsub('::', '+', geneSymbol)
+            ][
+              ,providerName:=gsub('::', '+', providerName)
+              ][!providerName%like%'disc'][
+                ,providerName:=gsub('_.*','',providerName)
+                ] %>% unique()  )
   
   combine_df=function(x){
     df1=copy(x)[,geneSymbol:=NULL]
     df2=copy(x)[,providerName:=NULL]
-    colnames(df2)[7]='providerName'
+    names(df2)[names(df2) == 'geneSymbol'] ='providerName'
     df_combined=rbind(df1,df2)
     return(df_combined)
   }
   
-  df=lapply(df,function(x)x=combine_df(x))
-  
-  df_final=lapply(df,function(y)y=inner_join(y,motifs,by=c('providerName'='motif_names')) %>% dplyr::select(c(1,2,3,everything())) %>%
-                    as.data.table()%>% setorderv(c('seqnames','start'),1))
-  return(df_final)
+  # df$geneSymbol= gsub('::', '+',  df$geneSymbol)
+  # df=df[
+  #   ,motif_start:=gsub(',.*','',motifPos)
+  #   ][
+  #     ,motif_start:=gsub('.*-','',motif_start) %>% as.numeric()
+  #     ][
+  #       ,motif_end:=gsub(".*,","",motifPos)%>% as.numeric()
+  #       ][
+  #         ,motif_start:=start-motif_start
+  #         ][
+  #           ,motif_end:=end+motif_end
+  #           ][
+  #             ,c('end','motifPos'):=NULL
+  #             ][!providerName%like%'disc'] %>% unique()
+  if(db=='jaspar'){
+    df_jaspar=lapply(df,function(y)y=inner_join(y,motifs,by=c('geneSymbol'='motif_names'))%>%as.data.table())
+    df_jaspar=lapply(df_jaspar,function(y)y=y[,providerName:=NULL][,providerName:=geneSymbol][,geneSymbol:=NULL] %>% 
+                       dplyr::select(c(1:9,'dataSource','providerName',everything())) %>%
+                       as.data.table()%>% setorderv(c('seqnames','start'),1))
+    return(df_jaspar)
+  }else{
+    
+    df=lapply(df,function(x)x=combine_df(x))
+    
+    df_final=lapply(df,function(y)y=inner_join(y,motifs,by=c('providerName'='motif_names')) %>% dplyr::select(c(1,2,3,everything())) %>%
+                      as.data.table()%>% setorderv(c('seqnames','start'),1))
+    return(df_final)
+  }
 }
 
-hocomoco_cluster=combine_results(hocomoco)
-lapply(hocomoco_cluster,function(x)x[,c('seqnames','start')] %>% unique() %>% nrow())
-lapply(hocomoco,function(x)x[,c('seqnames','start')] %>% unique() %>% nrow())
+hocomoco_cluster=tf_cluster(hocomoco,'hocomoco')
+lapply(hocomoco_cluster,function(x)x[,c(1:3)] %>% unique() %>% nrow())
+lapply(hocomoco,function(x)x[,c(1:3)] %>% unique() %>% nrow())
 
-jaspar_cluster=combine_results(jaspar)
-lapply(jaspar_cluster,function(x)x[,c('seqnames','start')] %>% unique() %>% nrow())
-lapply(jaspar,function(x)x[,c('seqnames','start')]%>% unique() %>% nrow())
+jaspar_cluster=tf_cluster(jaspar,'jaspar')
+lapply(jaspar_cluster,function(x)x[,c(1:3)] %>% unique() %>% nrow())
+lapply(jaspar,function(x)x[,c(1:3)] %>% unique() %>% nrow())
 
-encode_cluster=combine_results(encode)
-lapply(encode_cluster,function(x)x[,c('seqnames','start')] %>% unique() %>% nrow())
-lapply(encode,function(x)x[,c('seqnames','start')] %>% unique() %>% nrow())
+encode_cluster=tf_cluster(encode,'encode')
+lapply(encode_cluster,function(x)x[,c(1:3)] %>% unique() %>% nrow())
+lapply(encode,function(x)x[,c(1:3)] %>% unique() %>% nrow())
 
 
 ## combine files
@@ -107,87 +134,6 @@ combine=function(x,y,z){
 
 combined_tfbs=combine(encode_cluster,jaspar_cluster,hocomoco_cluster)
 
-
-## get motif clusters
-
-# ## Add vierstra clusters
-# clusters=function(clusters,cluster_names){
-#   df=fread(paste0(motif_cluster_dir,clusters,sep=''),sep=' ',header = T,select = c('Cluster','Motif'))
-#   
-#   df_names=fread(paste0(motif_cluster_dir,cluster_names,sep=''),sep='\t',header = T,select = c('Name','Cluster','Seed_motif'))[
-#     ,motif_name:=gsub('_.*','',Seed_motif)
-#     ][
-#       ,Seed_motif:=NULL]
-#   
-#   df_combined=inner_join(df,df_names,by='Cluster') %>% as.data.table()
-#   df_combined=df_combined[,symbol:=toupper(gsub('_.*','',Motif))]
-#   
-#   df_combined1=copy(df_combined)[,c(1:4)]
-#   df_combined2=copy(df_combined)[,4:=NULL]
-#   colnames(df_combined2)[4]='motif_name'
-#   
-#   df_combined_final=rbind(df_combined1,df_combined2) %>% unique()
-#   df_combined_final=df_combined_final[!motif_name%like%'mouse' ][!motif_name%like%'MOUSE']
-#   
-#   df_combined_final=semi_join(df_combined_final,gene_ids,by=c('motif_name'='Description')) %>%as.data.table() %>% unique()
-#   return(df_combined_final)
-# }
-# 
-# 
-# motif_clusters=clusters('motifs_vierstra','motif_cluster_names')
-# motifs_clusters=fread('./Motifbreak/Motifs_clusters/motifs_vierstra',sep=' ',header = T,select = c('Cluster','geneSymbol'))
-# motifs_clusters=semi_join(motifs_clusters,gene_ids,by=c('geneSymbol'='Description')) %>%as.data.table()
-# 
-# motifs_cluster_names=fread('./Motifbreak/Motifs_clusters/motif_cluster_names',sep='\t',header = T,select = c('Name','Cluster','Seed_motif'))
-# motifs_cluster_names=motifs_cluster_names[!Seed_motif%like%'mouse'][!Seed_motif%like%'MOUSE'][,Seed_motif:=gsub('_.*','',Seed_motif)][!Seed_motif%like%'mouse']
-
-
-# 
-# tfbs=function(x){
-#   x=as.character(list.files(x,full.names = T,recursive = F)) %>% 
-#     lapply(function(y)
-#       fread(y,sep=' ',header = T,
-#             select =c('seqnames','start','end','REF','ALT','geneSymbol','dataSource','providerName','providerId','effect')) %>% unique())
-#   x=lapply(x,function(y)
-#     y=y[
-#       ,duplicated_effect:=.N,by=.(seqnames,start,end,geneSymbol)
-#       ]%>% group_by(seqnames,start,end,geneSymbol) %>%
-#       filter(duplicated_effect==max(duplicated_effect)) %>% as.data.table()
-#   )
-#   x=x[c(2:4)] # remove ambiguous like this for now
-#   x=lapply(x,function(y)y=semi_join(y,gene_ids,by=c('geneSymbol'='Description')) %>% ## remove TFs absent from gtex (only D/OBOXs)
-#              as.data.table()) 
-#   
-#   x=lapply(x,function(y)y=y[
-#     ,geneSymbol:=toupper(geneSymbol)
-#     ][
-#       ,geneSymbol:=gsub("\\(VAR.2)", "", geneSymbol)
-#       ][
-#         ,geneSymbol:=gsub("\\(VAR.3)", "", geneSymbol)
-#         ][
-#           ,geneSymbol:=gsub('::', '+', geneSymbol)
-#           ][!providerName%like%'disc'][
-#             ,providerName:=gsub('_.*','',providerName)
-#             ][,c('effect','duplicated_effect'):=NULL] %>% unique()  )
-#   
-#   # [!providerName%like%'disc'][,c('providerName','effect','duplicated_effect'):=NULL][
-#   #   ,geneSymbol:=toupper(geneSymbol)
-#   #   ][
-#   #     , geneSymbol:=gsub('::', '+', geneSymbol)
-#   #     ] %>% unique())
-#   
-#   
-#   pop_names=c('denisova','neandertal','png')
-#   names(x)=pop_names
-#   for (i in seq_along(x)){
-#     assign(pop_names[i],x[[i]],.GlobalEnv)}
-#   return(x)
-# }
-# 
-# snps_tfbs=tfbs('./Motifbreak/Tx_and_CREs/TFBSs_disrupted_10neg5/combined/')
-# 
-
-# snps_tfbs=lapply(snps_tfbs,function(x)inner_join(x,motif_clusters,by=c('geneSymbol'='motif_name'))%>% as.data.table() %>% unique())
 
 ## count number SNPs per pop per tf
 snp_matrix=function(x,pop){
