@@ -94,7 +94,7 @@ snps_tfbs_highfreq_strong=strong_highfreq(snps_tfbs_cres)
 
 selected_snps=copy(snps_tfbs_highfreq_strong)%>% rbindlist()
 selected_snps=selected_snps[
-  ,c('pop','effect','fraction_snps_per_cell_per_effect','cell_type','cell_line')
+  ,c('pop','fraction_snps_per_cell_per_effect','cell_type','cell_line')
   ] %>% unique()
 
 
@@ -130,7 +130,25 @@ perform_test=function(x,y){
 
 stat_test_prop=lapply(stat_test_prop,function(x)one_tailed_wilcoxon(x)) %>% rbindlist()
 
-write.xlsx(stat_test_prop,'/home/dvespasiani/pvalue_tables/Supp_Table_TFBS_pvalues.xlsx')
+
+## make two Supp tables (fraction snps and pvals)
+enrich_pval_tables=function(x,table){
+  df_pval=copy(x)[,c('pop','cell_line','statistic','p','p.adj','p.signif')] %>% unique()
+  df_nonpval=copy(x)[,c('statistic','p','p.adj','p.signif'):=NULL] %>% unique()
+  
+  dfs=list(df_nonpval,df_pval)
+
+  df_names=c(table,'pvalues') 
+    names(dfs)=df_names
+    for (i in seq_along(dfs)){
+      assign(df_names[i],dfs[[i]],.GlobalEnv)}
+    return(dfs) 
+  }
+
+
+
+# tfbs_tables=enrich_pval_tables(stat_test_prop,'fraction_snps_per_cell_type')
+# write.xlsx(tfbs_tables,'~/pvalue_tables/Supp_Table_8_TFBS_pvalues.xlsx')
 
 
 selected_snps$cell_line=factor(selected_snps$cell_line,levels=c('Adipose','BCells','Brain','Digestive','Epithelial','ES_cells','ES_derived_cells','Heart','IMR90_fetal_lung_fibroblast',
@@ -230,24 +248,43 @@ stat_test=stat_test %>% split(as.factor(stat_test$pop)) %>%
              y=y %>% 
                mutate('p'=wilcox.test(y$ts_tv_ratio,alternative = 'l',mu=2,exact = F,paired = F)$p.val)%>%
                mutate('statistic'=wilcox.test(y$ts_tv_ratio,alternative = 'l',mu=2,exact = F,paired = F)$stat)%>% 
-               mutate('adj_p'=p.adjust(p,method = 'bonferroni'))%>%
-               mutate('significant_score'=ifelse(`adj_p`<=0.0001,'****',
-                                                 ifelse(`adj_p`>0.0001 &`adj_p`<=0.001,'***',
-                                                        ifelse(`adj_p`>0.001 & `adj_p`<=0.01,'**',
-                                                               ifelse(`adj_p`>0.01 & `adj_p`<=0.05,'*',' '))))) %>% 
+               mutate('p.adj'=p.adjust(p,method = 'bonferroni'))%>%
+               mutate('p.signif'=ifelse(`p.adj`<=0.0001,'****',
+                                                 ifelse(`p.adj`>0.0001 &`p.adj`<=0.001,'***',
+                                                        ifelse(`p.adj`>0.001 & `p.adj`<=0.01,'**',
+                                                               ifelse(`p.adj`>0.01 & `p.adj`<=0.05,'*',' '))))) %>% 
                as.data.table()
            )%>%rbindlist()
   ) %>%rbindlist()
+
 stat_test=stat_test[
-  ,c('pop','cell_type','cell_line','ts_tv_ratio','statistic','p','adj_p','significant_score')
+  ,c('pop','cell_type','cell_line','ts_tv_ratio','statistic','p','p.adj','p.signif')
   ] %>% unique()
 
-# write the respective table
-write.xlsx(stat_test,'/home/dvespasiani/pvalue_tables/Supp_Table_Ts_Tv_pvalues.xlsx')
+## make two Supp tables (fraction snps and pvals)
+
+enrich_pval_tables=function(x,table){
+  df_pval=copy(x)[,c('pop','cell_line','statistic','p','p.adj','p.signif')] %>% unique()
+  df_nonpval=copy(x)[,c('statistic','p','p.adj','p.signif'):=NULL] %>% unique()
+  
+  dfs=list(df_nonpval,df_pval)
+  
+  df_names=c(table,'pvalues') 
+  names(dfs)=df_names
+  for (i in seq_along(dfs)){
+    assign(df_names[i],dfs[[i]],.GlobalEnv)}
+  return(dfs) 
+}
+
+
+
+# ts_tv_tables=enrich_pval_tables(stat_test,'Ts_Tv_ratio')
+# write.xlsx(ts_tv_tables,'~/pvalue_tables/Supp_Table_9_TsTv_pvalues.xlsx')
+
 
 tstv_ratio_plot=function(df,cells){
   df=df[cell_line%in%cells]
-  stat_test=stat_test[cell_line%in%cells][,c('pop','cell_line','significant_score')] %>% unique()
+  stat_test=stat_test[cell_line%in%cells][,c('pop','cell_line','p.signif')] %>% unique()
   
    png=copy(df)[pop%in%'png']
    png=png%>%group_by(cell_line) %>%summarize(int = median(ts_tv_ratio))
@@ -268,7 +305,7 @@ tstv_ratio_plot=function(df,cells){
     geom_violin(trim=F,scale = "width")+
    geom_boxplot(width=.1, position =  position_dodge(width = 0.4),outlier.size=0.2)+
     geom_jitter(position=position_jitter(0.1),size=0.2)+
-    geom_text(data=stat_test, aes(x=pop, y=3.05, label=significant_score), col='black', size=7)+
+    geom_text(data=stat_test, aes(x=pop, y=3.05, label=p.signif), col='black', size=7)+
     geom_hline(yintercept=2, linetype="dashed", color = "darkgrey",size=0.2)+
     facet_wrap(cell_line~., ncol = 4)+
     geom_hline(data = png, aes(yintercept=int), linetype="dashed", color = "lightgrey",size=0.2)+
@@ -441,90 +478,4 @@ cell_condition_plot
 dev.off()
 
 
-# ##  example of TFs in stimulated cells
-# tfs_stimulated_cells=lapply(immune_tfbs_snps_in_ataseq,function(x)
-#   x=x[
-#     ,c('seqnames','start','end','REF','ALT','ANC','geneSymbol','contrast','cell_state','pop')
-#   ] %>% unique()
-# )
-# 
-# 
-# ## SNPs that regulate DE genes
-# snp_target_genes=as.character(list.files('./Motifbreak/GREAT_GO_terms/target_genes/',recursive = F,full.names = T)) %>% 
-#   lapply(function(x)fread(x,sep='\t',header = T))
-# # 241 ambig
-# # 503 deni
-# # 417 nean
-# # 4927 png
-# 
-# de_target_genes=as.character(list.files('./Motifbreak/GREAT_GO_terms/DE_genes_TFBS_regulated/',recursive = F,full.names = T)) %>% 
-#   lapply(function(x)fread(x,sep=' ',header = T)) # these files report the list of DE genes between islands
-# # 10 ambig
-# # 10 deni
-# # 8 nean
-# # 112 png
-# 
-# snp_target_genes=purrr::map2(snp_target_genes,de_target_genes,inner_join,by=c('gene'='hgnc_symbol'))
-# 
-# snp_target_genes=lapply(snp_target_genes,function(x)x=as.data.table(x)[
-#   ,c(1:3,6)
-#   ] %>% unique()
-# )
-# ## fetch rsid snp
-# snp_target_genes=purrr::map2(snp_target_genes,ooa_snps,inner_join,by=c('seqnames','start','end')) %>% 
-#   lapply(function(x)x=as.data.table(x)[
-#     ,c('seqnames','start','end','gene','Existing_variation')
-#     ] %>% unique()
-#   )
-# 
-# ## fetch TFBS information (e.g. cadd scores, all freq and other)
-# snp_target_genes=purrr::map2(snp_target_genes,snps_tfbs,inner_join,by=c('seqnames','start','end','Existing_variation')) %>% 
-#   lapply(function(x)x=as.data.table(x)[
-#     ,c('seqnames','start','end','ref','alt','ANC','gene','Existing_variation','geneSymbol','CADD_RAW','all_frequency')
-#     ] %>% unique()
-#   )
-# 
-# 
-# ### see how many are within W/E indonesia
-# denisova_in_w_indo=fread('../Original_files_per_region/Denisova/deni_w_indo',sep='\t',header = T)
-# neandertal_in_w_indo=fread('../Original_files_per_region/Neandertal/nean_w_indo',sep='\t',header = T)
-# 
-# # denisova_in_e_indo=fread('../Original_files_per_region/Denisova/deni_e_indo',sep='\t',header = T)
-# # neandertal_in_e_indo=fread('../Original_files_per_region/Neandertal/nean_e_indo',sep='\t',header = T)
-# 
-# 
-# # deni_isea=rbind(denisova_in_w_indo,denisova_in_e_indo)
-# # nean_isea=rbind(neandertal_in_e_indo,neandertal_in_w_indo)
-# 
-# shared_snps=function(x,archaic){
-#     x=x[,c(1:4)]  %>% 
-#     inner_join(archaic,by=c('seqnames'='CHR','start'='FROM','end'='TO')) %>% 
-#       filter(`POP_ARCH_REF`+`POP_ARCH_ALT`>1) %>% # removes singletons
-#               as.data.table()
-# }
-# 
-# deni_shared_with_windo=shared_snps(snp_target_genes[[2]],denisova_in_w_indo)
-# # 6/55 snps regulating IL7R and IFNGR1 
-# nean_shared_with_windo=shared_snps(snp_target_genes[[3]],neandertal_in_w_indo)
-# # 61/62 snps regulating DDIT3 EIF2S1 FANCC FUT8 GPHN JMJD1C TBPL1 TMOD2 (which are all the DE genes) 
-# 
-# # inner_join(denisova_in_w_indo,OAS3_regulatory_snps,by=c('CHR'='seqnames','FROM'='start','TO'='end'))
-# # inner_join(neandertal_in_w_indo,OAS3_regulatory_snps,by=c('CHR'='seqnames','FROM'='start','TO'='end'))
-# 
-# 
-# ## OAS genes 
-# denisova_oas=snp_target_genes[[2]][
-#   gene%in%c('OAS1','OAS2','OAS3')
-#   ]
-# 
-# ## check situation in w indonesia
-# denisova_oas[,c(1:3)] %>% unique() %>%
-#   inner_join(denisova_in_w_indo,by=c('seqnames'='CHR','start'='FROM','end'='TO')) %>% 
-#   as.data.table()
-# 
-# 
-# ## select deni snp that disrupt IRF4/TCF12 tfbs
-# denisova_oas_cool_snps=denisova_oas[
-#   geneSymbol%in%'IRF4'
-# ] # rs372433785_chr12_113345315_G_C 
 

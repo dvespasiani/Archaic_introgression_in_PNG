@@ -26,7 +26,45 @@ read_components=function(x){
 denisova_components=read_components('./Denisova_components/')
 
 # Denisova SNPs 
-denisova_in_png=fread('./PNG/OoA_snps/denisova_png',sep=' ',header = T)[
+denisova_in_png=fread('./PNG/Grouped_filtered_snps/denisova_png',sep=' ',header = T)[
+  ,seqnames:=CHR
+][
+ ,start:=FROM
+][
+  ,end:=TO
+][
+  ,c(1:3):=NULL
+]
+
+# merge deni snps with components
+keys=c('seqnames','start','end')
+setkeyv(denisova_in_png,keys)
+setkeyv(denisova_components,keys)
+
+merge_components=function(deni,components){
+  df=foverlaps(deni,components,type='within')[
+    ,c('start','end'):=NULL
+    ][
+      ,start:=i.start
+      ][
+        ,end:=i.end
+        ][
+          ,c('i.start','i.end'):=NULL
+          ]%>% mutate_if(is.character, ~replace(., is.na(.), 0)) %>% 
+    mutate_at('deni_component',as.factor) %>% 
+    as.data.table() %>% unique()
+  return(df)
+}
+
+deni_snp_component=merge_components(denisova_in_png,denisova_components)
+
+## count number snps per component 
+deni_snp_component %>% split(as.factor(deni_snp_component$deni_component)) %>% 
+  lapply(function(x)nrow(unique(x[,c('seqnames','start','end')])))
+
+
+## deni ooa snps
+denisova_ooa=fread('./PNG/OoA_snps/denisova.gz',sep=' ',header = T)[
   ,c('seqnames','start','end','ref','alt','ANC','all_frequency')
   ][
     ,freq_range:=ifelse(all_frequency<0.05,'low','high')
@@ -38,25 +76,10 @@ denisova_in_png=fread('./PNG/OoA_snps/denisova_png',sep=' ',header = T)[
           ,c('ANC','all_frequency'):=NULL
           ]%>% unique()
 
-# merge deni snps with components
-keys=c('seqnames','start','end')
-setkeyv(denisova_in_png,keys)
-setkeyv(denisova_components,keys)
+setkeyv(denisova_ooa,keys)
+denisova_ooasnps_components=merge_components(denisova_ooa,denisova_components)
 
-snp_component=foverlaps(denisova_in_png,denisova_components,type='within')[
-  ,c('start','end'):=NULL
-  ][
-    ,start:=i.start
-    ][
-      ,end:=i.end
-      ][
-        ,c('i.start','i.end'):=NULL
-        ]%>% mutate_if(is.character, ~replace(., is.na(.), 0)) %>% 
-  mutate_at('deni_component',as.factor) %>% 
-  as.data.table() %>% unique()
-
-
-denisovans=snp_component %>% split(as.factor(snp_component$deni_component))
+denisovans=denisova_ooasnps_components %>% split(as.factor(denisova_ooasnps_components$deni_component))
 denisovans=lapply(denisovans,function(x)x=x[,'deni_component':=NULL]%>% unique())
 
 # some snps are both in D1 and D2 haps -> assign them to D0
@@ -72,12 +95,14 @@ altai_denisova=rbind(altai_denisova,unassigned_denisova)
 
 sorted_denisovans=list(altai_denisova,png_denisova,indo_denisova) %>% 
   lapply(function(x)as.data.table(x))
-# lapply(sorted_denisovans,function(x)
-# x=x[,c('seqnames','start','end')] %>% unique() %>% nrow())
-# 5274 D1 snps (i.e. ~ 4%)
-# 5193 D2 snps (i.e. ~ 4% )
-# 133114 D0 snps (i.e. ~ 92%)
-# 143581 total Denisova aSNPs
+# lapply(sorted_denisovans,function(x) x=x[,c('seqnames','start','end')] %>% unique() %>% nrow())
+## 5274 D1 snps (i.e. ~ 4%)
+## 5193 D2 snps (i.e. ~ 4% )
+## 133114 D0 snps (i.e. ~ 92%)
+## 143581 total Denisova aSNPs
+
+lowfreq_deni=copy(sorted_denisovans) %>% lapply(function(x)x[freq_range%in%'low'])
+# lapply(lowfreq_deni,function(x) x=x[,c('seqnames','start','end'] %>% unique() %>% nrow())
 
 ## annotate them again with chromstates
 assign_cell_names=function(x,list_df){

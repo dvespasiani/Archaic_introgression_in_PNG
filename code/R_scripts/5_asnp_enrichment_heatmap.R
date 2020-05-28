@@ -204,8 +204,42 @@ pval_vector_nofreq=pval_vector(asnp_nofreq_pvals)
 pval_vector_highfreq=pval_vector(asnp_highfreq_pvals) 
 pval_vector_lowfreq=pval_vector(asnp_lowfreq_pvals) 
 
-write.xlsx(asnp_nofreq_pvals,'~/Desktop/pvalue_tables/nofreq_heatmap_pvalues.xlsx')
-write.xlsx(asnp_highfreq_pvals,'~/Desktop/pvalue_tables/highfreq_heatmap_pvalues.xlsx')
+## make two Supp tables (1 enrichment and 1 pvals)
+enrich_pval_tables=function(x,y,table){
+  file_1=copy(x)
+  file_1=file_1[order(as.factor(readr::parse_number(gsub("^.*\\.", "",file_1$chrom_state)))),]
+  file_2=copy(y)
+  file_2=file_2[order(as.factor(readr::parse_number(gsub("^.*\\.", "",file_2$chrom_state)))),]
+  
+      if(table=='pval'){
+     pvalues=list(file_1,file_2)
+     pvalues=lapply(pvalues,function(z)z=z[,c(2:4):=NULL] %>% unique())
+     
+     file_names=c('all_frequencies','common_to_high') 
+     names(pvalues)=file_names
+     for (i in seq_along(pvalues)){
+       assign(file_names[i],pvalues[[i]],.GlobalEnv)}
+     return(pvalues) 
+    }else{
+    
+    enrichment=list(file_1,file_2)
+    enrichment=lapply(enrichment,function(z)z=z[,c(1:5)] %>% unique())
+      
+    file_names=c('all_frequencies','common_to_high') 
+    names(enrichment)=file_names
+    for (i in seq_along(enrichment)){
+      assign(file_names[i],enrichment[[i]],.GlobalEnv)}
+      return(enrichment)
+  }
+  
+}
+
+
+enrichment_table=enrich_pval_tables(asnp_nofreq_pvals,asnp_highfreq_pvals,'enrichment')
+# write.xlsx(enrichment_table,'~/Desktop/Paper_1/pvalue_tables/Supplementary_tables/Supp_Table_2_heatmap_enrichment.xlsx')
+
+pval_table=enrich_pval_tables(asnp_nofreq_pvals,asnp_highfreq_pvals,'pval')
+# write.xlsx(pval_table,'~/Desktop/Paper_1/pvalue_tables/Supplementary_tables/Supp_Table_3_heatmap_pvalues.xlsx')
 
 
 ## color legends for heatmap
@@ -254,7 +288,7 @@ chromHMM_colors=nihroadmap_colors$col
 names(chromHMM_colors)=nihroadmap_colors$chrom_state
 
 
-enrich_colors=colorRamp2(c(-2,-1,0,1,2), colors=c('blue3','royalblue3','white','red2','red3'))
+enrich_colors=colorRamp2(c(-5,-2,-1,0,1,2), colors=c('blue3','royalblue3','royalblue1','white','red2','red3'))
 
 
 enrichment_heatmap=function(enrichmatrix,numbsnpsmatrix,pval){
@@ -339,20 +373,6 @@ dev.off()
 
 
 # 
-# lgd_chromHMM=Legend(title = '\n Chromatin states',
-#                     labels=stringr::str_sort(names(chromHMM_colors),numeric = T),
-#                     title_gp = gpar(fontsize=35,font=2),
-#                     title_gap = unit(1, "cm"),
-#                     title_position='topcenter',
-#                     border = T,
-#                     nrow = 3,
-#                     grid_width = unit(1, "cm"),
-#                     grid_height = unit(2, "cm"),
-#                     gap=unit(0.5, "cm"),
-#                     legend_gp = gpar(fill =c("#FF0000","#FF6E00","#32CD32","#008000","#006400","#C2E105", "#FFFF00","#66CDAA",
-#                                              "#8A91D0","#CD5C5C","#E9967A","#BDB76B","#3A3838","#808080","#DCDCDC")),
-#                    
-#                     labels_gp = gpar(fontsize= 40))
 # 
 # lgd_chromstatus=Legend(title = '\n State activity ', labels = c("Active","Inactive"),
 #                        title_gp = gpar(fontsize=35,font=2),
@@ -379,21 +399,26 @@ dev.off()
 #                     grid_height = unit(2, "cm"),
 #                     labels_gp = gpar(fontsize= 40))
 # 
-#          
-# lgd_enrich=Legend(col_fun = enrich_colors, at = c(-2,-1,0,1,2),
-#                   title='\n log2 aSNPs enrichment',
-#                   direction='horizontal',
-#                   border=T,
-#                   title_position='topcenter',
-#                   title_gp = gpar(fontsize=35,font=2),
-#                   title_gap = unit(1,'cm'),
-#                   legend_height = unit(10, "cm"),
-#                   grid_width = unit(0.8, "cm"),
-#                   grid_height = unit(2, "cm"),
-#                   labels_gp = gpar(fontsize= 40),
-#                   gap = unit(4, "cm"))
+
+enrich_colors_lgd=colorRamp2(c(-2,-1,0,1,2), colors=c('blue2','royalblue3','white','red','red1'))
+
+lgd_enrich=Legend(col_fun = enrich_colors_lgd, at = c(-2,-1,0,1,2),
+                  title='\n log2 aSNPs enrichment',
+                  direction='horizontal',
+                  border=T,
+                  title_position='topcenter',
+                  title_gp = gpar(fontsize=35,font=2),
+                  title_gap = unit(1,'cm'),
+                  legend_height = unit(10, "cm"),
+                  grid_width = unit(0.8, "cm"),
+                  grid_height = unit(2, "cm"),
+                  labels_gp = gpar(fontsize= 40),
+                  gap = unit(4, "cm"))
 # 
-# legends=packLegend(lgd_numbsnps,lgd_chromHMM,lgd_chromstatus,lgd_enrich,row_gap = unit(1, "cm"),direction = 'horizontal',gap = unit(10, "cm"))
+# legends=packLegend(lgd_numbsnps,lgd_chromstatus,lgd_enrich,row_gap = unit(1, "cm"),direction = 'horizontal',gap = unit(10, "cm"))
+# grid.draw(legends) 
+legends=packLegend(lgd_enrich,row_gap = unit(1, "cm"),direction = 'horizontal',gap = unit(10, "cm"))
+grid.draw(legends)
 # test=enrichment_heatmap(asnp_nofreq_matrix,numb_asnp_nofreq,pval_vector_nofreq)
 # draw(legends)
 # 

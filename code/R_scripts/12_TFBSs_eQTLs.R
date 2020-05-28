@@ -217,9 +217,10 @@ eQTL_freq_plot=function(df){
   ggplot(df,aes(x=pop,y=snp_freq,fill=frequency_type))+
     geom_violin(trim=F,scale = "width")+
     geom_boxplot(width=0.2, position =  position_dodge(width = 0.9),outlier.size = 0.3)+
+    geom_jitter(position = position_jitterdodge(jitter.width=0.2,dodge.width = 0.9), size=0.05)+
     # geom_jitter(position=position_jitter(0.1))+
     geom_text(data=pval, aes(x=pop, y=1.0001, label=p.signif), col='black', size=7)+
-    scale_x_discrete(limit = c("denisova", "neandertal",'png'),labels = c("Denisova","Neandertal",'Papuans'))+
+    scale_x_discrete(limit = c("denisova", "neandertal",'png'),labels = c("Denisova","Neanderthal",'Papuans'))+
     colScale+
     xlab(' ')+
     ylab('\n eQTL SNPs frequency \n')+

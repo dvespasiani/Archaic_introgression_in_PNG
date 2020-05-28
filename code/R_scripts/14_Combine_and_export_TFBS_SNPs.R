@@ -7,6 +7,9 @@ library(dplyr)
 setDTthreads(8)
 setwd('/data/projects/punim0586/dvespasiani/Files/PNG/Motifbreak/')
 
+output_dir='/home/dvespasiani/tables/'
+
+
 read_tfbs=function(x){
   x=as.character(list.files(x,recursive = F,full.names = T)) %>%
     lapply(function(y) y=fread(y,sep=' ',header = T))
@@ -62,10 +65,24 @@ tfbs_snps=purrr::map2(tfbs_snps,tfbs_eqtls,full_join,by=c('seqnames','start','en
 
 
 ## combine with great target genes and de genes
-tfbs_snps_final=purrr::map2(tfbs_targets,tfbs_snps,full_join,by=c('seqnames','start','end')) %>%
+tfbs_snps_final=purrr::map2(tfbs_cd targets,tfbs_snps,full_join,by=c('seqnames','start','end')) %>%
   lapply(function(x)x=x%>% dplyr::select(c(1:3,7:36,4:6)) %>%as.data.table() %>% setorderv(c('seqnames','start','end'),1))
 
 tfbs_snps_final=lapply(tfbs_snps_final,function(x)x=inner_join(x,rsids,by=c('seqnames','start')) %>% as.data.table())
 
-# write excel file TFBS snps
-write.xlsx(tfbs_snps_final,'/home/dvespasiani/tables/Supp_Table_6_TFBS_SNPs.xlsx',append=T)
+
+assign_names=function(y){
+  pop_names=c('Supp_file_Denisova_TFBS_aSNPs','Supp_file_Neanderta_TFBS_aSNPs','Supp_file_PNG_TFBS_naSNPs')
+  names(y)=pop_names
+  for (i in seq_along(y)){
+    assign(pop_names[i],y[[i]],.GlobalEnv)}
+  return(y)
+}
+
+
+tfbs_snps_final=assign_names(tfbs_snps_final)
+
+tfbs_filenames=paste0(output_dir,names(tfbs_snps_final),sep='')
+mapply(write.table, tfbs_snps_final, file = tfbs_filenames,col.names = T, row.names = F, sep = "\t", quote = F)
+
+

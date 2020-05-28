@@ -214,7 +214,7 @@ write.table(deni_genes_for_cytoscape,paste(top25_go_genes,'denisova_top25_genes'
 
 mtw_kor_de=fread('./DE_genes/DE_genes_MTW_KOR.txt',sep=' ',header = F,drop='V2',
                  col.names = c("genes","logFC","AveExpr", "t", "P.Value","adj.P.Val", "B"))[
-                   adj.P.Val<0.05
+                   adj.P.Val<0.01
                    ]
 tfbs_DE_targets=function(x){
   x=inner_join(x,mtw_kor_de,by=c('ensembl_gene_id'='genes')) %>% 
@@ -224,6 +224,29 @@ tfbs_DE_targets=function(x){
 }
 
 DE_targets=lapply(target_genes_assoc_sign_gos,function(x)tfbs_DE_targets(x))
+
+## test for enrichment in numb de genes targeted by deni 
+## get all human genes
+annots = c('hg19_basicgenes')
+human_genes = annotatr::build_annotations(genome = 'hg19', annotations = annots) %>%
+  as.data.table()
+human_genes=human_genes[,'symbol'] %>% na.omit() %>% unique() %>% nrow()
+
+
+enrichment_pval=function(x,y){
+  
+  pop_de_genes=copy(x)[,'ensembl_gene_id'] %>% unique() %>% nrow()
+  pop_target_genes=copy(y)[,'ensembl_gene_id'] %>% unique() %>% nrow()
+  pop_genes=copy(mtw_kor_de)[,'genes'] %>% unique() %>% nrow()
+  
+  test=phyper(pop_de_genes-1,pop_genes,human_genes-pop_genes,pop_target_genes,lower.tail = F)
+  return(test)
+}
+
+enrichment_pval(DE_targets[[1]],target_genes_assoc_sign_gos[[1]])
+enrichment_pval(DE_targets[[2]],target_genes_assoc_sign_gos[[2]])
+enrichment_pval(DE_targets[[3]],target_genes_assoc_sign_gos[[3]])
+
 
 ## get now CADD scores, alleles in PNG and world wide frequencies
 ooa_snps=function(x){
@@ -237,8 +260,7 @@ ooa_snps=function(x){
            'CADD_RAW','CADD_PHRED','all_frequency','Existing_variation')
         ]%>% unique()
   )
-  x=x[c(2:4)]
-  return(x)
+    return(x)
 }
 
 OoA_snps=ooa_snps('./OoA_snps')
@@ -252,10 +274,6 @@ de_target_genes=copy(DE_targets) %>% lapply(function(x)x=x[,c(4,6)] %>% unique()
 de_filenames=paste0(de_target_genes_output_dir,names(de_target_genes),sep='')
 mapply(write.table,de_target_genes, file = de_filenames,col.names = T, row.names = F, sep = " ", quote = F)
 
-
-# deni_de_genes_go=de_go_genes(snps_gene_targets[[1]]) # 95
-# nean_de_genes_go=de_go_genes(nean_genes_go) #92
-# png_de_genes_go=de_go_genes(png_genes_go) #649
 
 ## Fetch tfbs-disrupting snps associated with these DE genes
 # de_genes=list(ambig_de_genes_go,deni_de_genes_go,nean_de_genes_go,png_de_genes_go)
@@ -288,9 +306,9 @@ shared_snps=function(de,windo_snps){
 }
 
 
-deni_shared=shared_snps(DE_targets[[1]],denisova_in_w_indo) # 78/284 shared  between w indo and png
-nean_shared=shared_snps(DE_targets[[2]],neandertal_in_w_indo) # 158/224 shared between w indo and png
-png_shared=shared_snps(DE_targets[[3]],windo_nasnps) # 252/512 shared between w indo and png
+deni_shared=shared_snps(DE_targets[[1]],denisova_in_w_indo) # 48 shared  between w indo and png
+nean_shared=shared_snps(DE_targets[[2]],neandertal_in_w_indo) # 102 shared between w indo and png
+png_shared=shared_snps(DE_targets[[3]],windo_nasnps) # shared between w indo and png
 
 
 # barplot alleles shared between png and w indo
@@ -344,152 +362,11 @@ pdf('/home/dvespasiani/tfbs_plots/TFBS_DE_genes_ISEA_distribution.pdf',width = 7
 shared_plot
 dev.off()
 
-# ## cadd scores of these TFBS-snps targeting DE genes
-# cadd_scores_plot=function(x){
-#   y=copy(x)
-#   y=Map(mutate,y,'pop'=names(y)) %>% rbindlist()
-#   y=y[,c(1:3,14,18)] %>% unique()
-#   
-#   my_palette_pop=c('#C99E10', # denisova
-#                    '#9B4F0F', #neandertal
-#                    '#1E656D' #png
-#   )
-#   
-#   names(my_palette_pop)= levels(as.factor(y$pop))
-#   colScale=scale_fill_manual(name= " ",values = my_palette_pop,labels = c('Denisova','Neandertal','PNG'))
-#   
-#   plot=ggplot(y,aes(x=pop,y=CADD_RAW,fill=pop))+
-#     colScale+
-#     xlab(' ')+ylab('\n CADD raw score \n ')+
-#     geom_violin(trim=F,scale = "width")+
-#     geom_boxplot(width=.1, position =  position_dodge(width = 0.4),notch = T)+
-#     stat_compare_means(method = "wilcox.test",label = "p.signif",
-#                        ref.group = "png",hide.ns =T,
-#                        label.y =max(y$CADD_RAW)+0.00003,
-#                        size=12)+
-#     theme(axis.text.x = element_blank(),
-#           axis.text.y = element_text(size=30),
-#           axis.title.y = element_text(size=40,hjust=0.5),
-#           axis.title.x = element_blank(),
-#           axis.ticks.x = element_blank(),
-#          plot.title = element_text(hjust = 0.5,size=15),
-#           plot.subtitle = element_text(hjust= 0.5),
-#           panel.background =element_rect(fill = 'white', colour = 'black'),
-#           panel.grid.minor = element_blank(),
-#           panel.grid.major = element_blank(),
-#           legend.text = element_text(size = 28),
-#           legend.title = element_text(size = 28),
-#           legend.margin = margin(c(0.5, 2, 8, 25)),
-#           legend.spacing.x = unit(0.5, 'cm'),
-#           axis.line = element_line(color = "black",
-#                                    size = 0.7, linetype = "solid"))
-#   return(plot)
-# }
-# 
-# pdf('/home/dvespasiani/tfbs_plots/TFBS_de_genes_cadd_plot.pdf',width = 20,height = 20)
-# cadd_scores_plot(DE_targets)
-# dev.off()
 
 ## get OAS genes TFBS-snps
 OAS_snps=copy(target_genes_assoc_sign_gos[[1]])[gene%in%c('OAS2','OAS3')] %>% inner_join(tfbs[[1]],by=c('seqnames','start','end'))
 OAS_snps_mtw_kor=inner_join(OAS_snps,denisova_in_w_indo,by=c('seqnames'='CHR','start'='FROM','end'='TO')) %>% as.data.table()
 
-## see which TFBS they disrupt
 
-# 
-# shared_snps=function(x,archaic){
-#   x=x[,c('seqnames','start','end','geneSymbol','gene')]  %>% 
-#     inner_join(archaic,by=c('seqnames'='CHR','start'='FROM','end'='TO')) %>% 
-#     filter(`POP_ARCH_REF`+`POP_ARCH_ALT`>1) %>% # removes singletons
-#     as.data.table()
-#   x=x[
-#       ,c(1:3)
-#       ][
-#         ,'distribution':='shared'
-#         ] %>% unique()
-# }
-# 
-# deni_shared=shared_snps(tfbs_target_de_genes[[2]],denisova_in_w_indo) # 84/348  between w indo and png
-# nean_shared=shared_snps(tfbs_target_de_genes[[3]],neandertal_in_w_indo) # 252/322 shared between w indo and png
-# 
-# ambig_shared_nean=shared_snps(tfbs_target_de_genes[[1]],neandertal_in_w_indo)
-# ambig_shared_deni=shared_snps(tfbs_target_de_genes[[1]],denisova_in_w_indo)           
-# 
-# ambig_shared=rbind(ambig_shared_nean,ambig_shared_deni) %>% unique() # 68/123
-# 
-# # barplot 
-# windo_png=function(x,y){
-#   x=copy(x)%>% 
-#   anti_join(y[,c(1:3)],by=c('seqnames','start','end')) %>%
-#     as.data.table()
-#   x=x[
-#       ,'distribution':='png'
-#     ][
-#   ,c('seqnames','start','end','distribution')
-# ] %>% unique()
-# x=rbind(x,y)
-# x=x[
-#   ,'tot_snps':=.N
-# ][
-#   ,'tot_snps_per_condition':=.N,by=.(distribution)
-# ][
-#   ,'distribution_fraction':=tot_snps_per_condition/tot_snps
-# ][
-#   ,c('distribution','distribution_fraction')
-# ] %>% unique()
-# }
-# 
-#    
-# windo_png_neandertal=windo_png(tfbs_target_de_genes[[3]],nean_shared)[
-#   ,'pop':='Neandertal'
-# ]
-# windo_png_denisova=windo_png(tfbs_target_de_genes[[2]],deni_shared)[
-#   ,'pop':='Denisova'
-# ]
-# 
-# windo_png_ambiguous=windo_png(tfbs_target_de_genes[[1]],ambig_shared)[
-#   ,'pop':='Ambiguous'
-#   ]
-# 
-# windo_png_archaics=rbind(windo_png_denisova,windo_png_neandertal,windo_png_ambiguous)
-# 
-# shared_plot=ggplot(windo_png_archaics,aes(x=pop,y=distribution_fraction,fill=distribution))+
-#   geom_bar(stat='identity')+
-#   scale_fill_manual(values=c('lightskyblue2','plum2'),
-#                     name=' ',labels=c('Papuan specific','Shared with west Indonesians'))+
-#   ylab('\n Fraction of SNPs \n')+ xlab('\n \n')+
-# theme(axis.text.x = element_text(hjust = 1,size=28,angle = 40),
-#       axis.text.y = element_text(size=28),
-#       axis.title.y = element_text(size=30,hjust=0.5),
-#       axis.text=element_text(size=28),
-#       legend.text = element_text(size = 28),
-#       legend.title = element_text(size = 28),
-#       legend.margin = margin(c(0.5, 2, 8, 25)),
-#       legend.spacing.x = unit(0.5, 'cm'),
-#       axis.line = element_line(color = "black", 
-#                                size = 0.7, linetype = "solid"))
-# 
-#   
-# 
-# pdf('/home/dvespasiani/TFBS_DE_genes_ISEA_distribution.pdf',width = 20,height = 20)
-# shared_plot
-# dev.off()
-# 
-# ## papuan specific TFBS-disrupting aSNPs
-# papuans_deni=anti_join(tfbs_target_de_genes[[2]],deni_shared,by=c('seqnames','start','end')) %>%
-#   as.data.table()
-# papuans_oas=copy(papuans_deni)[
-#   ,c('seqnames','start','end','REF','ALT','geneSymbol','gene')
-# ][gene%in%c('OAS1','OAS2','OAS3')] %>% unique() # 12 snps
-# 
-# # 3 snps are not present in w indonesians and for the others these people are fixed for the ref allele
-# oas_snps=inner_join(papuans_oas,denisova_in_w_indo,by=c('seqnames'='CHR','start'='FROM','end'='TO','REF','ALT')) %>%
-#   inner_join(ooa_snps[[2]],by=c('seqnames','start','end','ANC','REF'='ref','ALT'='alt')) %>% 
-#   as.data.table() 
-# 
-# ## possible cool snps are those that disrupt immune specific tfs (e.g. IRF4/TCF12)
-# denisova_oas_cool_snps=copy(oas_snps)[
-#   geneSymbol%in%'IRF4'
-#   ] # rs372433785_chr12_113345315_G_C 
-# 
-# 
+
+OoA_snps[[1]][OAS_snps,on=c('seqnames','start','end')]

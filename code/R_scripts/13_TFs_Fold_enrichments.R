@@ -164,7 +164,7 @@ snp_matrix=function(x,pop){
                                     ]%>% unique()
     
     df_final=df_final[
-      ,pval:=phyper(tot_asnps_tf-1,tot_snps_tf,tot_nasnps,tot_asnps,lower.tail = F) # this calculates the p value of having a >= numb aSNPs targeting a tf given a total number of aSNPs, naSNPs
+      ,pval:=phyper(tot_asnps_tf-1,tot_asnps,tot_nasnps,tot_snps_tf,lower.tail = F) # this calculates the p value of having a >= numb aSNPs targeting a tf given a total number of aSNPs, naSNPs
       ][
         ,adj_p:=p.adjust(pval, method="bonferroni")
         ][

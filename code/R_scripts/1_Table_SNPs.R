@@ -44,7 +44,6 @@ read_files=function(x){
 
 population_files=read_files('./Original_files') 
 
-
 number_snps=function(x){df=copy(x)[,c(1:3)] %>%unique() %>%  nrow()}
 
 tot_snps_between_haplotypes=copy(population_files) %>% rbindlist() %>% number_snps() # 8192985

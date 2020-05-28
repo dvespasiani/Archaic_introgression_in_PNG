@@ -126,9 +126,8 @@ asnp_allfreq_enrichment_pval=simplified(asnp_allfreq_enrichment_pval)
 asnp_highfreq_enrichment_pval=lapply(asnp_highfreq_enrichment,function(x)t_test_cell_line(x))
 asnp_highfreq_enrichment_pval=simplified(asnp_highfreq_enrichment_pval)
 
-pval=list(asnp_allfreq_enrichment_pval,asnp_highfreq_enrichment_pval)
-
-write.xlsx(pval,'/home/dvespasiani/pvalue_tables/Supp_Table_ranked_enrichment.xlsx')
+# pval=list(asnp_allfreq_enrichment_pval,asnp_highfreq_enrichment_pval)
+# write.xlsx(pval,'/home/dvespasiani/pvalue_tables/Supp_Table_ranked_enrichment.xlsx')
 
 
 ### mean + sd 
@@ -178,14 +177,15 @@ ranked_enrichment_plot=function(x){
   names(my_palette_states)=nihroadmap_colors$chrom_state
   
   colScale=scale_fill_manual(name= " ",values = my_palette_states,labels = names(my_palette_states))
-  linecol=scale_color_manual(name= " ",values = my_palette_states,labels = names(my_palette_states))
-  # linecol='black'
-  
+  dotcol=scale_color_manual(name= " ",values = my_palette_states,labels = names(my_palette_states))
+
   ggplot(x,aes(x=cell_line,y=mean,col=chrom_state))+
-    # geom_point()+
-    # geom_errorbar(aes(ymin=mean-sd, ymax=mean+sd),position=position_dodge(width=0.6),width=0)+
-    geom_pointrange(aes(ymin=mean-sd, ymax=mean+sd),size=0.3)+
-    linecol+
+    geom_point()+
+    geom_errorbar(aes(ymin=mean-sd, ymax=mean+sd),position=position_dodge(width=0.6),width=0)+
+    # geom_text(data=x, aes(x=pop, y=(111)+0.0000001, label=p.signif), col='black', size=7)+
+     # geom_pointrange(aes(ymin=mean-sd, ymax=mean+sd),size=0.3)+
+    geom_point(shape = 1,colour = "black")+
+    dotcol+
     colScale+
     geom_line(aes(group=1),color='black',size=0.3)+
     # stat_summary(fun=mean, geom="line", aes(group=1)) +
