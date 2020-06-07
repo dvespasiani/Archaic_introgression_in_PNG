@@ -14,72 +14,26 @@ read_snps=function(x){
     lapply(function(y)
       fread(y,sep=' ',header = T)[
         ,chromatin_status := plyr::revalue(chrom_state,
-                                            c('1_TssA'='active','2_TssAFlnk'='active','3_TxFlnk'='active','4_Tx'='active','5_TxWk'='active','6_EnhG'='active','7_Enh'='active','8_ZNF/Rpts'='active',
-                                              '9_Het'='inactive','10_TssBiv'='inactive','11_BivFlnk'='inactive','12_EnhBiv'='inactive','13_ReprPC'='inactive','14_ReprPCWk'='inactive','15_Quies'='inactive'))
-      ]
-    
+                                           c('1_TssA'='active','2_TssAFlnk'='active','3_TxFlnk'='active','4_Tx'='active','5_TxWk'='active','6_EnhG'='active','7_Enh'='active','8_ZNF/Rpts'='active',
+                                             '9_Het'='inactive','10_TssBiv'='inactive','11_BivFlnk'='inactive','12_EnhBiv'='inactive','13_ReprPC'='inactive','14_ReprPCWk'='inactive','15_Quies'='inactive'))
+        ]
+      
     )
-  pop_names=c('denisova','neandertal','png') 
+  pop_names=c('denisova','neandertal') 
   names(x)=pop_names
   for (i in seq_along(x)){
     assign(pop_names[i],x[[i]],.GlobalEnv)}
+  x=Map(mutate,x,'pop'=names(x)) %>% lapply(function(z)setDT(z))
+  
   return(x)
 }
 
-snps=read_snps('./')
-
-# enrichment(s)
-enrichment=function(x,freq){
-   if(freq=='nosplit'){
-    asnps_nofreq=copy(x[c(1:2)])
-    nasnps_nofreq=copy(x[[3]])
-
-    asnps_nofreq=lapply(asnps_nofreq,function(z)
-    z=z[, .SD, .SDcols = !names(x) %like% "freq"] %>% unique())
-    nasnps_nofreq=nasnps_nofreq[, .SD, .SDcols = !names(nasnps_nofreq) %like% "freq"]%>% unique()
-  
-    asnps_nofreq=lapply(asnps_nofreq,function(z)
-      z=inner_join(z,nasnps_nofreq,by=c('chrom_state','chromatin_status','cell_type','cell_line')) %>%as.data.table())
-    asnps_nofreq=lapply(asnps_nofreq,function(z)
-      z=z[
-    ,enrichment :=fraction_snpdens_perstate_perepigenome.x/fraction_snpdens_perstate_perepigenome.y
-    ][
-      ,c('chrom_state','cell_type','cell_line','enrichment',
-         'total_snps_perstate_perepigenome.x')
-      ] %>% unique())
-    
-    asnps_nofreq=Map(mutate,asnps_nofreq,'pop'=names(asnps_nofreq)) %>% lapply(function(z)setDT(z))
-    return(asnps_nofreq)
-  } else{
-    asnps_freq=copy(x[c(1:2)])
-    nasnps_freq=copy(x[[3]])
-    
-    asnps_freq=lapply(asnps_freq,function(z)
-      z=z[, .SD, .SDcols = names(z) %like% "freq|cell|chrom" ] %>% unique())
-    nasnps_freq=nasnps_freq[, .SD, .SDcols = names(nasnps_freq) %like% "freq|cell|chrom" ] %>% unique()
-    
-    asnps_freq=lapply(asnps_freq,function(z)z=inner_join(z,nasnps_freq,by=c('chrom_state','chromatin_status','cell_type','cell_line','freq_range')) %>%as.data.table())
-    asnps_freq=lapply(asnps_freq,function(z)
-      z=z[
-        ,enrichment :=fraction_snpdens_perstate_perepigenome_perfreqrange.x/fraction_snpdens_perstate_perepigenome_perfreqrange.y
-        ][
-          ,c('chrom_state','cell_type','cell_line','enrichment','freq_range',
-             'total_snps_perstate_perepigenome_perfreqrange.x')
-          ] %>% unique())
-    asnps_freq=Map(mutate,asnps_freq,'pop'=names(asnps_freq)) %>% lapply(function(z)setDT(z))
-    
-    return(asnps_freq)
-  }
-}
-
-
-asnp_nofreq=enrichment(snps,'nosplit')
-asnp_freq=enrichment(snps,'split')
+asnp_nofreq=read_snps('./all_freq/')
+asnp_freq=read_snps('./high_freq/')
 
 ## matrix with log10 number of snps
-numbsnps_matrix=function(x,split){
-  make_matrix=function(x){
-    df=copy(x) %>% rbindlist()
+numbsnps_matrix=function(x){
+     df=copy(x) %>% rbindlist()
     colnames(df)[5]='tot_numbsnps_perelement_perepigenome'
     df=df[
       ,c('chrom_state','cell_type','cell_line','tot_numbsnps_perelement_perepigenome','pop')
@@ -95,30 +49,15 @@ numbsnps_matrix=function(x,split){
     df=df%>% dplyr::select(-1) 
     df=df%>% as.matrix() 
     df=df%>% log10()
-  }
-  if(split=='no'){
-    df_nosplit=copy(x)
-    df_nosplit=make_matrix(df_nosplit)
-  }else if(split=='high'){
-    df_high=copy(x) 
-    df_high=lapply(df_high,function(x)x[freq_range%in%'high'][,freq_range:=NULL])
-    df_high=make_matrix(df_high)
-  } else{ 
-    df_low=copy(x) 
-    df_low=lapply(df_low,function(x)x[freq_range%in%'low'][,freq_range:=NULL])
-    df_low=make_matrix(df_low)   
-  }
+  
 }
 
-numb_asnp_nofreq=numbsnps_matrix(asnp_nofreq,'no')
-numb_asnp_highfreq=numbsnps_matrix(asnp_freq,'high')
-numb_asnp_lowfreq=numbsnps_matrix(asnp_freq,'low')
-
+numb_asnp_nofreq=numbsnps_matrix(asnp_nofreq)
+numb_asnp_highfreq=numbsnps_matrix(asnp_freq)
 
 # convert enrichment into matrix for heatmap
-enrichment_matrix=function(x,split){
-  build_matrix=function(x){
-    df=copy(x) %>% rbindlist()
+enrichment_matrix=function(x){
+  df=copy(x) %>% rbindlist()
     colnames(df)[5]='tot_numbsnps_perelement_perepigenome'
     
     df=df[, cell_type_line := paste(cell_type,cell_line, sep='.')
@@ -133,54 +72,35 @@ enrichment_matrix=function(x,split){
     df=df%>% as.matrix() %>% log2()
   }
   
-    if(split=='no'){
-    df_nosplit=copy(x)
-    df_nosplit=build_matrix(df_nosplit)
-  }else if(split=='high'){
-    df_high=copy(x) 
-    df_high=lapply(df_high,function(x)x[freq_range%in%'high'][,freq_range:=NULL])
-    df_high=build_matrix(df_high)
-  } else{ 
-    df_low=copy(x) 
-    df_low=lapply(df_low,function(x)x[freq_range%in%'low'][,freq_range:=NULL])
-    df_low=build_matrix(df_low)   
-    }
-}
 
-asnp_nofreq_matrix=enrichment_matrix(asnp_nofreq,'no')
-asnp_highfreq_matrix=enrichment_matrix(asnp_freq,'high')
-asnp_lowfreq_matrix=enrichment_matrix(asnp_freq,'low')
+asnp_nofreq_matrix=enrichment_matrix(asnp_nofreq)
+asnp_highfreq_matrix=enrichment_matrix(asnp_freq)
+# asnp_lowfreq_matrix=enrichment_matrix(asnp_freq,'low')
 
 ## one sample t test for every cell ##
 stat_test=function(x){
   df=copy(x)
   colnames(df)[5]='tot_numbsnps_perelement_perepigenome'
-   df=df[,c('tot_numbsnps_perelement_perepigenome'):=NULL] %>% unique() 
-  df=df[
-    ,enrichment:=log2(enrichment)
-  ]
-   df=df %>% 
+  df=df[,c('tot_numbsnps_perelement_perepigenome'):=NULL] %>% unique() 
+  df=df %>% 
     split(as.factor(df$pop)) %>% 
     lapply(function(y)y %>% split(as.factor(y$chrom_state)) %>% 
              lapply(function(z) z %>%
-                 mutate('test_stat' := t.test(z$enrichment,mu=0,alternative = 'g')$statistic,
-                        'p_val':=t.test(z$enrichment,mu=0,alternative = 'g')$p.value,
-                        'df' :=t.test(z$enrichment,mu=0,alternative = 'g')$parameter,
-                        'p.adj':=p.adjust(p_val,method = 'bonferroni'),
-                        'p.signif'= ifelse(`p.adj`<=0.0001,'****',
-                                           ifelse(`p.adj`>0.0001 &`p.adj`<=0.001,'***',
-                                                  ifelse(`p.adj`>0.001 & `p.adj`<=0.01,'**',
-                                                         ifelse(`p.adj`>0.01 & `p.adj`<=0.05,'*',' '))))) %>% 
-                 as.data.table()
+                      mutate('test_stat' := t.test(z$enrichment,mu= 1,alternative = 'g')$statistic,
+                             'p_val':=t.test(z$enrichment,mu= 1,alternative = 'g')$p.value,
+                             'df' :=t.test(z$enrichment,mu= 1,alternative = 'g')$parameter,
+                             'p.adj':=p.adjust(p_val,method = 'bonferroni'),
+                             'p.signif'= ifelse(`p.adj`<=0.0001,'****',
+                                                ifelse(`p.adj`>0.0001 &`p.adj`<=0.001,'***',
+                                                       ifelse(`p.adj`>0.001 & `p.adj`<=0.01,'**',
+                                                              ifelse(`p.adj`>0.01 & `p.adj`<=0.05,'*',' '))))) %>% 
+                      as.data.table()
              ) %>% rbindlist()
     )%>% rbindlist()
-   }
-
-
+}
 
 asnp_nofreq_pvals=lapply(asnp_nofreq,function(x)stat_test(x)) %>% rbindlist()
-asnp_highfreq_pvals=lapply(asnp_freq,function(x)x[freq_range%in%'high'][,freq_range:=NULL]) %>% lapply(function(x)stat_test(x))%>% rbindlist()
-asnp_lowfreq_pvals=lapply(asnp_freq,function(x)x[freq_range%in%'low'][,freq_range:=NULL]) %>% lapply(function(x)stat_test(x))%>% rbindlist()
+asnp_highfreq_pvals=lapply(asnp_freq,function(x)stat_test(x))%>% rbindlist()
 
 
 pval_vector=function(x){
@@ -201,8 +121,7 @@ pval_vector=function(x){
 }
 
 pval_vector_nofreq=pval_vector(asnp_nofreq_pvals) 
-pval_vector_highfreq=pval_vector(asnp_highfreq_pvals) 
-pval_vector_lowfreq=pval_vector(asnp_lowfreq_pvals) 
+pval_vector_highfreq=pval_vector(asnp_highfreq_pvals)
 
 ## make two Supp tables (1 enrichment and 1 pvals)
 enrich_pval_tables=function(x,y,table){
@@ -211,42 +130,42 @@ enrich_pval_tables=function(x,y,table){
   file_2=copy(y)
   file_2=file_2[order(as.factor(readr::parse_number(gsub("^.*\\.", "",file_2$chrom_state)))),]
   
-      if(table=='pval'){
-     pvalues=list(file_1,file_2)
-     pvalues=lapply(pvalues,function(z)z=z[,c(2:4):=NULL] %>% unique())
-     
-     file_names=c('all_frequencies','common_to_high') 
-     names(pvalues)=file_names
-     for (i in seq_along(pvalues)){
-       assign(file_names[i],pvalues[[i]],.GlobalEnv)}
-     return(pvalues) 
-    }else{
+  if(table=='pval'){
+    pvalues=list(file_1,file_2)
+    pvalues=lapply(pvalues,function(z)z=z[,c(2:6):=NULL] %>% unique())
+    
+    file_names=c('all_frequencies','common_to_high') 
+    names(pvalues)=file_names
+    for (i in seq_along(pvalues)){
+      assign(file_names[i],pvalues[[i]],.GlobalEnv)}
+    return(pvalues) 
+  }else{
     
     enrichment=list(file_1,file_2)
-    enrichment=lapply(enrichment,function(z)z=z[,c(1:5)] %>% unique())
-      
-    file_names=c('all_frequencies','common_to_high') 
+    enrichment=lapply(enrichment,function(z)z=z[,c(1:4,7)] %>% unique())
+    
+    file_names=c('all-frequencies','common-to-high') 
     names(enrichment)=file_names
     for (i in seq_along(enrichment)){
       assign(file_names[i],enrichment[[i]],.GlobalEnv)}
-      return(enrichment)
+    return(enrichment)
   }
   
 }
 
 
 enrichment_table=enrich_pval_tables(asnp_nofreq_pvals,asnp_highfreq_pvals,'enrichment')
-# write.xlsx(enrichment_table,'~/Desktop/Paper_1/pvalue_tables/Supplementary_tables/Supp_Table_2_heatmap_enrichment.xlsx')
+write.xlsx(enrichment_table,'~/Desktop/Paper_1/pvalue_tables/Supplementary_tables/Supp_Table_2_heatmap_enrichment.xlsx')
 
 pval_table=enrich_pval_tables(asnp_nofreq_pvals,asnp_highfreq_pvals,'pval')
-# write.xlsx(pval_table,'~/Desktop/Paper_1/pvalue_tables/Supplementary_tables/Supp_Table_3_heatmap_pvalues.xlsx')
+write.xlsx(pval_table,'~/Desktop/Paper_1/pvalue_tables/Supplementary_tables/Supp_Table_3_heatmap_pvalues.xlsx')
 
 
 ## color legends for heatmap
 chromstatus_color=function(x){
   x=x[
-        ,c('chrom_state')
-        ] %>% unique()
+    ,c('chrom_state')
+    ] %>% unique()
   x=x[
     ,col :=plyr::revalue(`chrom_state`,c('1_TssA'='khaki3','2_TssAFlnk'='khaki3','3_TxFlnk'='khaki3',
                                          '4_Tx'='khaki3','5_TxWk'='khaki3','6_EnhG'='khaki3',
@@ -266,8 +185,8 @@ pop_color=function(x){
   x=x[,c('pop')
       ] %>% unique()
   x=x[   
-        ,col :=plyr::revalue(`pop`,c('ambiguous'='#8D230F','denisova'='#C99E10','neandertal'='#9B4F0F'))
-        ]
+    ,col :=plyr::revalue(`pop`,c('denisova'='#C99E10','neandertal'='#9B4F0F'))
+    ]
 }
 
 pop_color=pop_color(asnp_nofreq_pvals)
@@ -294,65 +213,65 @@ enrich_colors=colorRamp2(c(-5,-2,-1,0,1,2), colors=c('blue3','royalblue3','royal
 enrichment_heatmap=function(enrichmatrix,numbsnpsmatrix,pval){
   
   x=Heatmap(enrichmatrix, border = T,
-                        rect_gp = gpar(type = "none"),
-                        cell_fun = function(j, i, x, y, width, height, fill) {
-                          grid.circle(x = x, y = y, r = abs(numbsnpsmatrix[i, j])/25,  #asnp_chromstates[i, j])/5 * min(unit.c(width, height)
-                                      gp = gpar(fill = enrich_colors(enrichmatrix[i, j]), col = 'black'))
-                          
-                        },
-                        # height=unit(20,'cm'),
-                        row_dend_reorder = T,
-                        row_order=order(as.character(gsub("^.*\\.", "", rownames(enrichmatrix)))),
-                        #row_split = as.factor(gsub("^.*\\.", "", rownames(asnpenrichment_nofreqsplit))),
-                        show_heatmap_legend = F,
-                        show_row_names = F,
-                        row_title =" ",
-                        show_column_names = F,
+            rect_gp = gpar(type = "none"),
+            cell_fun = function(j, i, x, y, width, height, fill) {
+              grid.circle(x = x, y = y, r = abs(numbsnpsmatrix[i, j])/25,  #asnp_chromstates[i, j])/5 * min(unit.c(width, height)
+                          gp = gpar(fill = enrich_colors(enrichmatrix[i, j]), col = 'black'))
+              
+            },
+            # height=unit(20,'cm'),
+            row_dend_reorder = T,
+            row_order=order(as.character(gsub("^.*\\.", "", rownames(enrichmatrix)))),
+            #row_split = as.factor(gsub("^.*\\.", "", rownames(asnpenrichment_nofreqsplit))),
+            show_heatmap_legend = F,
+            show_row_names = F,
+            row_title =" ",
+            show_column_names = F,
             column_order =order(as.factor(readr::parse_number(gsub("^.*\\.", "",colnames(enrichmatrix))))),
-                        column_split = as.factor(readr::parse_number(gsub("^.*\\.", "", colnames(enrichmatrix)))),
-                        column_title =' ',
-                        top_annotation = HeatmapAnnotation(
-                          which='col',
-                          pop=anno_simple(sort(gsub("\\..*", "",colnames(enrichmatrix))),
-                                          border = T,
-                                          height=unit(2,'cm'),
-                                          col=pop_colors),
-                          new_chromatin_status=anno_simple(
-                            gsub("^.*\\.", "",colnames(enrichmatrix)),
-                            border = T,
-                            height = unit(2,'cm'),
-                            col=chromatin_colors,
-                            pch = pval,
-                            pt_gp=gpar(fontsize=40)),
-                          chrom_state=anno_simple(
-                            gsub("^.*\\.", "", colnames(enrichmatrix)),
-                            border=T,
-                            height = unit(2,'cm'),
-                            col=chromHMM_colors),
-                          show_annotation_name = F),
+            column_split = as.factor(readr::parse_number(gsub("^.*\\.", "", colnames(enrichmatrix)))),
+            column_title =' ',
+            top_annotation = HeatmapAnnotation(
+              which='col',
+              pop=anno_simple(sort(gsub("\\..*", "",colnames(enrichmatrix))),
+                              border = T,
+                              height=unit(2,'cm'),
+                              col=pop_colors),
+              new_chromatin_status=anno_simple(
+                gsub("^.*\\.", "",colnames(enrichmatrix)),
+                border = T,
+                height = unit(2,'cm'),
+                col=chromatin_colors,
+                pch = pval,
+                pt_gp=gpar(fontsize=40)),
+              chrom_state=anno_simple(
+                gsub("^.*\\.", "", colnames(enrichmatrix)),
+                border=T,
+                height = unit(2,'cm'),
+                col=chromHMM_colors),
+              show_annotation_name = F),
             left_annotation = HeatmapAnnotation(which='row',
                                                 width = unit(5,'cm'),
                                                 Cells = anno_simple(
                                                   gsub("^.*\\.", "",rownames(enrichmatrix)),
                                                   # height = unit(10,'cm'),
                                                   col= c("Adipose"='darkorange3',
-                                                                    "BCells"='palegreen4',
-                                                                    "Brain"='goldenrod3',
-                                                                    "Digestive"="plum3",
-                                                                    "Epithelial"="orange1",
-                                                                    "ES_cells"='hotpink4',
-                                                                    "ES_derived_cells"='dodgerblue2',
-                                                                    "Heart"="palevioletred2",
-                                                                    'IMR90_fetal_lung_fibroblast'='red3',
-                                                                    "iPSC"='mediumpurple4',
-                                                                    "Mesenchymal"='hotpink3',
-                                                                    "Muscle"="indianred",
-                                                                    "Myosatellite"='darkorange2',
-                                                                    "Neurospheres"='lightgoldenrod2',
-                                                                    "Other_cells"="grey60",
-                                                                    "Smooth_muscle"="hotpink1",
-                                                                    "TCells"='chartreuse4',
-                                                                    "Thymus"='yellow2')),show_annotation_name = F))
+                                                         "BCells"='palegreen4',
+                                                         "Brain"='goldenrod3',
+                                                         "Digestive"="plum3",
+                                                         "Epithelial"="orange1",
+                                                         "ES_cells"='hotpink4',
+                                                         "ES_derived_cells"='dodgerblue2',
+                                                         "Heart"="palevioletred2",
+                                                         'IMR90_fetal_lung_fibroblast'='red3',
+                                                         "iPSC"='mediumpurple4',
+                                                         "Mesenchymal"='hotpink3',
+                                                         "Muscle"="indianred",
+                                                         "Myosatellite"='darkorange2',
+                                                         "Neurospheres"='lightgoldenrod2',
+                                                         "Other_cells"="grey60",
+                                                         "Smooth_muscle"="hotpink1",
+                                                         "TCells"='chartreuse4',
+                                                         "Thymus"='yellow2')),show_annotation_name = F))
   return(x)
 }
 
@@ -364,13 +283,6 @@ dev.off()
 pdf('~/Desktop/Paper_1/heatmaps/heatmap_asnpenrichmet_highfreq.pdf',width=25,height = 50)
 enrichment_heatmap(asnp_highfreq_matrix,numb_asnp_highfreq,pval_vector_highfreq)
 dev.off()
-
-
-pdf('~/Desktop/Paper_1/heatmaps/heatmap_asnpenrichmet_lowfreq.pdf',width=25,height = 50)
-enrichment_heatmap(asnp_lowfreq_matrix,numb_asnp_lowfreq,pval_vector_lowfreq)
-dev.off()
-
-
 
 # 
 # 
@@ -414,16 +326,12 @@ lgd_enrich=Legend(col_fun = enrich_colors_lgd, at = c(-2,-1,0,1,2),
                   grid_height = unit(2, "cm"),
                   labels_gp = gpar(fontsize= 40),
                   gap = unit(4, "cm"))
-# 
-# legends=packLegend(lgd_numbsnps,lgd_chromstatus,lgd_enrich,row_gap = unit(1, "cm"),direction = 'horizontal',gap = unit(10, "cm"))
-# grid.draw(legends) 
+
 legends=packLegend(lgd_enrich,row_gap = unit(1, "cm"),direction = 'horizontal',gap = unit(10, "cm"))
 grid.draw(legends)
-# test=enrichment_heatmap(asnp_nofreq_matrix,numb_asnp_nofreq,pval_vector_nofreq)
-# draw(legends)
-# 
+
 # pdf('~/Desktop/test.pdf',width=100,height = 200)
 # draw(legends)
 # dev.off()
- 
+
 

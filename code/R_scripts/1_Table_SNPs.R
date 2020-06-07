@@ -184,8 +184,8 @@ assign_names=function(x){
 
 png_snps_list=assign_names(png_snps_list)
 
-filenames=paste0(outputdir,names(png_snps_list),sep='')
-mapply(write.table,png_snps_list, file = filenames,col.names = T, row.names = F, sep = " ", quote = F)
+# filenames=paste0(outputdir,names(png_snps_list),sep='')
+# mapply(write.table,png_snps_list, file = filenames,col.names = T, row.names = F, sep = " ", quote = F)
 
 ## output files for VEP annotation
 vep_input_format=copy(png_snps_list) %>% lapply(function(x)x[,c('CHR','FROM','REF','ALT')][
@@ -202,10 +202,20 @@ vep_input_format=copy(png_snps_list) %>% lapply(function(x)x[,c('CHR','FROM','RE
 vep_filenames=paste0(vep_output_dir,names(vep_input_format),sep='')
 vep_filenames=paste0(vep_filenames,'.txt',sep='')
 
-mapply(write.table,vep_input_format, file = vep_filenames,col.names = T, row.names = F, sep = "\t", quote = F)
+# mapply(write.table,vep_input_format, file = vep_filenames,col.names = T, row.names = F, sep = "\t", quote = F)
 
 
+## plot sfs
+sfs=copy(png_snps_list)
+sfs=lapply(sfs,function(x)x=x[,all_frequency:=round(all_frequency,1)][
+  ,numbsnps:=.N,by=all_frequency
+][,log10_numbsnps:=log10(numbsnps)][,c('log10_numbsnps','all_frequency')] %>% unique())
 
+sfs=Map(mutate,sfs,'pop'=names(sfs)) %>% rbindlist()
 
+pdf('/home/dvespasiani/sfs.pdf',width = 7,height = 7)
+ggplot(sfs,aes(x=all_frequency,y=log10_numbsnps,fill=pop))+
+  geom_bar(stat = 'identity',position = 'dodge')
+dev.off()
 
 

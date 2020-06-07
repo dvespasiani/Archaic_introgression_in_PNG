@@ -1,5 +1,5 @@
 ## Scripts
-* All analyses used the modules: R-bundle-Bioconductor/3.7-intel-2018.u4-R-3.5.1 and web_proxy on Spartan.
+* All analyses used the modules: r/4.0.0 and web_proxy on Spartan.
 * All SNPs input/output are in GRCh37/hg19 coordinates
 
 ### command line used:
@@ -18,7 +18,8 @@ wget -r --no-parent -A '*coreMarks_mnemonics.bed.gz*' https://egg2.wustl.edu/roa
 ## Workflow
 * Sort SNPs by ancestry and filter them in order to yield a high-confidence set of archaic variants
 * Annotate SNPs across genome (VEP) and chromatin functional elements, comparing SNPs impact across cells
-* Evaluate the function of regulatory variants via motifbreakR retrieving DNA motifs from Jaspar 2018, HOCOMOCO v.10 and ENCODE databases.
+* Evaluate the function of regulatory variants via motifbreakR retrieving DNA motifs from Jaspar 2018, HOCOMOCO v11 databases. Results were filtered to remove SNPs disrupting same motif across the two databases. For these variants keep those where that where the scoreRef-scoreAlt differnce in the PWM is the highest.
+* Combine these SNPs with TF cluster info 
 * Retrieve the set of regulated genes and compare their functions among ancestries
 * Gene regulatory networks was generated using the stringApp v 1.3.0 in Cytoscape v 3.7.1
 

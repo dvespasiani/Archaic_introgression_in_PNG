@@ -7,15 +7,11 @@ library(ggrepel)
 
 motif_input_dir='./Motifbreak/Tx_and_CREs/TFBSs_disrupted_10neg5/'
 motif_cluster_dir='./Motifbreak/Motifs_clusters/'
-
+merging_keys=c('seqnames','start','end')
 
 setDTthreads(8)
 
 setwd('/data/projects/punim0586/dvespasiani/Files/PNG/')
-
-
-gtex_expr=fread('./GTEx/GTEx_Analysis_v8_gene_median_tmp/GTEx_Analysis_2017-06-05_v8_RNASeQCv1.1.9_gene_median_tpm.gct',sep='\t',header = T)
-gene_ids=gtex_expr[,c(1:2)]
 
 
 read_tfbs_snps=function(x){
@@ -28,8 +24,6 @@ read_tfbs_snps=function(x){
               ,snpPos := NULL]
     )
   x=x[c(2:4)]# remove ambig
-  x=lapply(x,function(y)y=semi_join(y,gene_ids,by=c('geneSymbol'='Description')) %>% ## remove TFs absent from gtex (only D/OBOXs)
-             as.data.table()) 
   
   pop_names=c('denisova','neandertal','png')
   names(x)=pop_names
@@ -41,8 +35,9 @@ read_tfbs_snps=function(x){
 
 hocomoco=read_tfbs_snps(paste(motif_input_dir,'hocomoco',sep=''))
 jaspar=read_tfbs_snps(paste(motif_input_dir,'jaspar',sep=''))
-encode=read_tfbs_snps(paste(motif_input_dir,'encode',sep='')) %>% lapply(function(x)x=copy(x)[providerName%like%'_known_'])
-
+# encode=read_tfbs_snps(paste(motif_input_dir,'encode',sep='')) %>% lapply(function(x)x=copy(x)[providerName%like%'_known_'])
+lapply(hocomoco,function(x)x[,c('seqnames','start','end')] %>% unique() %>% nrow())
+lapply(jaspar,function(x)x[,c('seqnames','start','end')] %>% unique() %>% nrow())
 
 ## motif clusters
 
@@ -81,20 +76,6 @@ tf_cluster=function(x,db){
     return(df_combined)
   }
   
-  # df$geneSymbol= gsub('::', '+',  df$geneSymbol)
-  # df=df[
-  #   ,motif_start:=gsub(',.*','',motifPos)
-  #   ][
-  #     ,motif_start:=gsub('.*-','',motif_start) %>% as.numeric()
-  #     ][
-  #       ,motif_end:=gsub(".*,","",motifPos)%>% as.numeric()
-  #       ][
-  #         ,motif_start:=start-motif_start
-  #         ][
-  #           ,motif_end:=end+motif_end
-  #           ][
-  #             ,c('end','motifPos'):=NULL
-  #             ][!providerName%like%'disc'] %>% unique()
   if(db=='jaspar'){
     df_jaspar=lapply(df,function(y)y=inner_join(y,motifs,by=c('geneSymbol'='motif_names'))%>%as.data.table())
     df_jaspar=lapply(df_jaspar,function(y)y=y[,providerName:=NULL][,providerName:=geneSymbol][,geneSymbol:=NULL] %>% 
@@ -112,28 +93,84 @@ tf_cluster=function(x,db){
 }
 
 hocomoco_cluster=tf_cluster(hocomoco,'hocomoco')
-lapply(hocomoco_cluster,function(x)x[,c(1:3)] %>% unique() %>% nrow())
-lapply(hocomoco,function(x)x[,c(1:3)] %>% unique() %>% nrow())
+lapply(hocomoco_cluster,function(x)x[,c('seqnames','start','end')] %>% unique() %>% nrow())
+lapply(hocomoco,function(x)x[,c('seqnames','start','end')] %>% unique() %>% nrow())
 
 jaspar_cluster=tf_cluster(jaspar,'jaspar')
-lapply(jaspar_cluster,function(x)x[,c(1:3)] %>% unique() %>% nrow())
-lapply(jaspar,function(x)x[,c(1:3)] %>% unique() %>% nrow())
+lapply(jaspar_cluster,function(x)x[,c('seqnames','start','end')] %>% unique() %>% nrow())
+lapply(jaspar,function(x)x[,c('seqnames','start','end')] %>% unique() %>% nrow())
 
-encode_cluster=tf_cluster(encode,'encode')
-lapply(encode_cluster,function(x)x[,c(1:3)] %>% unique() %>% nrow())
-lapply(encode,function(x)x[,c(1:3)] %>% unique() %>% nrow())
-
+# encode_cluster=tf_cluster(encode,'encode')
+# lapply(encode_cluster,function(x)x[,c(1:3)] %>% unique() %>% nrow())
+# lapply(encode,function(x)x[,c(1:3)] %>% unique() %>% nrow())
+# test_encode=copy(encode)
+# test_encode=lapply(test_encode,function(x)x=x[geneSymbol%in%'NHLH1'][,c('seqnames','start','end')]%>% unique())
+# test_hocomoco=copy(hocomoco)
+# test_hocomoco=lapply(test_hocomoco,function(x)x=x[geneSymbol%in%'NHLH1'][,c('seqnames','start','end')] %>% unique())
 
 ## combine files
-combine=function(x,y,z){
+combine=function(x,y){
   df=purrr::map2(x,y,rbind) %>% lapply(function(x)setDT(x))
-  df=purrr::map2(df,z,rbind) %>% lapply(function(x)setDT(x))
+  # df=purrr::map2(df,z,rbind) %>% lapply(function(x)setDT(x))
   df=lapply(df,function(x)x=x[,'Motif':=NULL] %>%
               unique() %>%dplyr::select(c('seqnames','start','end','REF','ALT',everything())) %>% as.data.table())
 }
 
-combined_tfbs=combine(encode_cluster,jaspar_cluster,hocomoco_cluster)
+combined_tfbs=combine(jaspar_cluster,hocomoco_cluster)
+lapply(combined_tfbs,function(x)x[,c('seqnames','start','end')] %>% unique() %>% nrow())
 
+
+### add frequency filtering step
+read_active_states=function(x){
+  x=as.character(list.files(x,recursive = F,full.names = T)) %>%
+    lapply(function(y)
+      fread(y,sep=' ',header = T,select=c('seqnames','start','end','chrom_state','cell_type','cell_line','all_freq'))[
+        chrom_state%in%c('1_TssA','2_TssAFlnk','3_TxFlnk','4_Tx','5_TxWk',"6_EnhG","7_Enh")
+        ][
+          ,chrom_state:=NULL
+          ] %>% unique()
+    )
+}
+
+states=read_active_states('./Chromatin_states/SNPs_chromHMM_annotated/new_set') # remove the temp directory once the old script is optimized
+
+commontohigh_combined_tfbs=purrr::map2(combined_tfbs,states,inner_join,by=merging_keys) %>% lapply(function(x)x=as.data.table(x)[all_freq>=0.05][cell_line%in%c('TCells','BCells')])
+lapply(commontohigh_combined_tfbs,function(x)x[,c('seqnames','start','end')] %>% unique() %>% nrow())
+
+
+## combined one
+# 
+# tfbs=function(x){
+#   x=as.character(list.files(x,full.names = T,recursive = F)) %>% 
+#     lapply(function(y)
+#       fread(y,sep=' ',header = T,
+#             select =c('seqnames','start','end','REF','ALT','geneSymbol','providerName','effect')) %>% unique())
+#    x=x[c(2:4)] # remove ambiguous like this for now
+#   x=lapply(x,function(y)y=semi_join(y,gene_ids,by=c('geneSymbol'='Description')) %>%as.data.table()) ## remove TFs absent from gtex (only D/OBOXs)
+#   x=lapply(x,function(y)y=y[
+#     ,geneSymbol:=toupper(geneSymbol)
+#     ][
+#       ,geneSymbol:=gsub("\\(VAR.2)", "", geneSymbol)
+#       ][
+#         ,geneSymbol:=gsub("\\(VAR.3)", "", geneSymbol)
+#         ][
+#           ,geneSymbol:=gsub('::', '+', geneSymbol)
+#           ][
+#             ,providerName:=gsub('::', '+', providerName)
+#             ][!providerName%like%'disc'][
+#               ,providerName:=gsub('_.*','',providerName)
+#               ] %>% unique()  )
+#   
+#   # x=lapply(x,function(y)y=inner_join(y,motifs,by=c('providerName'='motif_names')) %>% as.data.table())
+#   pop_names=c('denisova','neandertal','png')
+#   names(x)=pop_names
+#   for (i in seq_along(x)){
+#     assign(pop_names[i],x[[i]],.GlobalEnv)}
+#   return(x)
+# }
+# 
+# test_combined_snps=tfbs('./Motifbreak/Tx_and_CREs/TFBSs_disrupted_10neg5/combined/')
+# lapply(combined_tfbs,function(x)x=x[,c(1:3)]%>%unique()%>%nrow())
 
 ## count number SNPs per pop per tf
 snp_matrix=function(x,pop){
@@ -166,7 +203,7 @@ snp_matrix=function(x,pop){
     df_final=df_final[
       ,pval:=phyper(tot_asnps_tf-1,tot_asnps,tot_nasnps,tot_snps_tf,lower.tail = F) # this calculates the p value of having a >= numb aSNPs targeting a tf given a total number of aSNPs, naSNPs
       ][
-        ,adj_p:=p.adjust(pval, method="bonferroni")
+        ,adj_p:=p.adjust(pval, method="fdr")
         ][
           ,log10_p_adjust:=-log10(adj_p)
           ][
@@ -201,8 +238,20 @@ snp_matrix=function(x,pop){
 }
 
 
-denisova_matrix=snp_matrix(combined_tfbs,'deni')
-neandertal_matrix=snp_matrix(combined_tfbs,'nean')
+df=copy(jaspar_cluster[c(1,3)])
+
+
+df=lapply(df,function(x)x=x[,c('seqnames','start','end','dataSource','providerName','Cluster')] %>% unique())
+df=lapply(df,function(y)y=unique(y)[,numbsnps:=.N,by=.(Cluster)][,totsnps:=.N][,c('Cluster','numbsnps','totsnps')] %>% unique())
+df=Map(mutate,df,'pop'=names(df))
+
+df_final=full_join(df[[1]],df[[2]],by='Cluster') %>%as.data.table() %>% na.omit()
+
+
+
+
+denisova_matrix=snp_matrix(commontohigh_combined_tfbs,'deni')
+neandertal_matrix=snp_matrix(commontohigh_combined_tfbs,'nean')
 
 
 ## table p values
@@ -221,7 +270,7 @@ write.xlsx(pvals,'/home/dvespasiani/pvalue_tables/Supp_Table_TFs_hypergeom_pvalu
 tf_enrich_plot=function(x){
   df=copy(x)[,'Log10 total number aSNPs per TF':=log10_tot_asnps_tf]
   gradient=scale_colour_viridis(aes(`Log10 total number aSNPs per TF`),option="inferno",discrete = F)
-  text=ifelse(df$log2_fold_enrichment>0 & df$log10_p_adjust>10,df$Name,'')
+  text=ifelse(df$log2_fold_enrichment>0 & df$log10_p_adjust>1,df$Name,'')
   
   ggplot(df,aes(x=log2_fold_enrichment,log10_p_adjust,label = text,col=log10_tot_asnps_tf))+
     geom_point(size=2)+

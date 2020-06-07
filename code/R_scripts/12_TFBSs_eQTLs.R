@@ -94,14 +94,13 @@ return(x)
  
 snps_tfbs=tfbs('./Motifbreak/Tx_and_CREs/TFBSs_disrupted_10neg5/combined')
 lapply(snps_tfbs,function(x)x=x[,c('seqnames','start','end')] %>% unique() %>% nrow())
-## ambiguous 5922
-## denisova 42689
-## neandertal 24292
-## png 259386
+## denisova 38730
+## neandertal 22080
+## png 240389
 
 ## SNPS that are eQTLs
 tfbs_eqtls=function(x){
-  x=lapply(x,function(y)inner_join(y,cis_eqtls_hg19,by=c('seqnames'='snp_seqnames','start'='snp_start', 'REF'='ref')) %>% 
+  x=lapply(x,function(y)inner_join(y,cis_eqtls_hg19,by=c('seqnames'='snp_seqnames','start'='snp_start', 'REF'='ref','ALT'='alt')) %>% 
              as.data.table())
   x=Map(mutate,x,'pop'=names(x))
   y=lapply(x,function(y)setDT(y))
@@ -116,9 +115,10 @@ table_tfbs_eqtls=lapply(snps_tfbs_eqtls,function(x)
     )
 # lapply(table_tfbs_eqtls,function(x)x=x[,c(1:3)] %>% unique() %>% nrow())
 # xxx ambiguous
-# 34 denisova (0.079%)
-# 76 neandertal (0.31%)
-# 402 png (0.15%)
+# 32 denisova (0.082%)
+# 70 neandertal (0.32%)
+# 369 png (0.15%)
+
 
 ## write tfbs eqtls
 # tfbs_output_dir='./Motifbreak/TFBS_eQTLs/'
@@ -198,9 +198,11 @@ pvalues=pvalues%>% split(as.factor(snps_eqtl_freq$pop)) %>%
       ] %>% unique()) %>% rbindlist()
 
 ## p values
-## deni (W=335, p=5.317529e-01,padj= 1.000000e+00)
-## nean (W=556, p=2.688617e-06, padj=4.086698e-04)
-## png (W=20566, p=1.211664e-17,padj= 9.741775e-15)
+## denisova    W=314   padj 1
+## neandertal  W=434   padj  3.165594e-04      ***
+## png         W=17140 padj 8.548505e-14     ****
+
+
 
 eQTL_freq_plot=function(df){
   
@@ -246,49 +248,49 @@ eQTL_freq_plot(snps_eqtl_freq)
 dev.off()
 
 ## check if tfbs snp is on the same strand of regulated gene and how far they are ~
-## median distance for denisova = 1kb for nean 26kb for ambiguous 12kb for png 14kb
-tss_distance=copy(snps_tfbs_eqtls)
-tss_distance=lapply(tss_distance,function(x)
-  x=x[
-    ,tss_distance:=gene_start-start
-  ][
-    ,same_strand:=ifelse(strand.x==strand.y,'yes','no')
-  ][,c('seqnames','start','end','tss_distance','pop')] %>% 
-    unique())
-
-tss_distance=rbindlist(tss_distance)[
-  ,c('tss_distance','pop')
-][
-  ,tss_distance:=round(log10(tss_distance),1)
-] %>% na.omit()
-
-
-tss_distance_plot=ggplot(tss_distance,aes(x=pop,y=tss_distance,fill=pop))+
-  geom_violin(trim=F,scale = "width")+
-  geom_boxplot(width=0.2, position =  position_dodge(width = 0.9),outlier.size = 0.3)+
-  scale_fill_manual(values=c('#C99E10','#9B4F0F','#1E656D'),name='Population',labels=c('Denisova','Neandertal','PNG'))+
-  scale_x_discrete(limit = c("denisova", "neandertal",'png'),labels = c("Denisova","Neandertal",'Papuans'))+
-  xlab('\n  \n')+ylab('\n log10 base distance eQTL SNPs - eGene TSS  \n')+
-  theme(panel.background =element_rect(fill = 'white', colour = 'white'),
-        panel.grid.minor = element_blank(),
-        panel.grid.major = element_blank(),
-        legend.text = element_text(),
-        legend.title = element_text(),
-        legend.margin = margin(c(0.5, 2, 8, 25)),
-        legend.spacing.x = unit(0.5, 'cm'),
-        legend.position = 'bottom',
-        axis.text.x = element_text(angle = 60,vjust = 0.4,hjust = 0.5),
-        axis.ticks.x = element_blank(),
-        axis.text.y = element_text(),
-        axis.title.y = element_text(hjust=0.5),
-        axis.text=element_text(),
-        axis.line = element_line(color = "black",size = 0.5, linetype = "solid"))
-
-pdf('/home/dvespasiani/tfbs_plots/tss_eqtls_distance_boxplot.pdf',width = 7,height=7)
-tss_distance_plot
-dev.off()
-
-
-
-
-
+# ## median distance for denisova = 1kb for nean 26kb for ambiguous 12kb for png 14kb
+# tss_distance=copy(snps_tfbs_eqtls)
+# tss_distance=lapply(tss_distance,function(x)
+#   x=x[
+#     ,tss_distance:=gene_start-start
+#   ][
+#     ,same_strand:=ifelse(strand.x==strand.y,'yes','no')
+#   ][,c('seqnames','start','end','tss_distance','pop')] %>% 
+#     unique())
+# 
+# tss_distance=rbindlist(tss_distance)[
+#   ,c('tss_distance','pop')
+# ][
+#   ,tss_distance:=round(log10(tss_distance),1)
+# ] %>% na.omit()
+# 
+# 
+# tss_distance_plot=ggplot(tss_distance,aes(x=pop,y=tss_distance,fill=pop))+
+#   geom_violin(trim=F,scale = "width")+
+#   geom_boxplot(width=0.2, position =  position_dodge(width = 0.9),outlier.size = 0.3)+
+#   scale_fill_manual(values=c('#C99E10','#9B4F0F','#1E656D'),name='Population',labels=c('Denisova','Neandertal','PNG'))+
+#   scale_x_discrete(limit = c("denisova", "neandertal",'png'),labels = c("Denisova","Neandertal",'Papuans'))+
+#   xlab('\n  \n')+ylab('\n log10 base distance eQTL SNPs - eGene TSS  \n')+
+#   theme(panel.background =element_rect(fill = 'white', colour = 'white'),
+#         panel.grid.minor = element_blank(),
+#         panel.grid.major = element_blank(),
+#         legend.text = element_text(),
+#         legend.title = element_text(),
+#         legend.margin = margin(c(0.5, 2, 8, 25)),
+#         legend.spacing.x = unit(0.5, 'cm'),
+#         legend.position = 'bottom',
+#         axis.text.x = element_text(angle = 60,vjust = 0.4,hjust = 0.5),
+#         axis.ticks.x = element_blank(),
+#         axis.text.y = element_text(),
+#         axis.title.y = element_text(hjust=0.5),
+#         axis.text=element_text(),
+#         axis.line = element_line(color = "black",size = 0.5, linetype = "solid"))
+# 
+# pdf('/home/dvespasiani/tfbs_plots/tss_eqtls_distance_boxplot.pdf',width = 7,height=7)
+# tss_distance_plot
+# dev.off()
+# 
+# 
+# 
+# 
+# 

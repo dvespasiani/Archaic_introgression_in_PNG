@@ -45,15 +45,24 @@ read_tfbs_snps=function(x){
 
 hocomoco_tfbs=read_tfbs_snps(paste(motif_input_dir,'hocomoco',sep=''))
 jaspar_tfbs=read_tfbs_snps(paste(motif_input_dir,'jaspar',sep=''))
-encode_tfbs=read_tfbs_snps(paste(motif_input_dir,'encode',sep=''))
-known_encode_tfbs=lapply(encode_tfbs,function(x)x=copy(x)[providerName%like%'_known_'])
+# encode_tfbs=read_tfbs_snps(paste(motif_input_dir,'encode',sep=''))
+# known_encode_tfbs=lapply(encode_tfbs,function(x)x=copy(x)[providerName%like%'_known_'])
 
-combined=purrr::map2(known_encode_tfbs,jaspar_tfbs,rbind)
-combined=purrr::map2(combined,hocomoco_tfbs,rbind)
+combined=purrr::map2(hocomoco_tfbs,jaspar_tfbs,rbind)
+# combined=purrr::map2(combined,hocomoco_tfbs,rbind)
 combined=lapply(combined,function(x)x=unique(x))
+# 
+# # numb snps
+# x=lapply(encode_tfbs,function(x)x=x[providerName%like%'REST'][,c('seqnames','start','end','providerName')] %>% unique())
+# y=lapply(hocomoco_tfbs,function(x)x=x[providerName%like%'REST'][,c('seqnames','start','end','providerName')] %>% unique())
+# 
+# z=purrr::map2(x,y,semi_join,c('seqnames','start','end')) 
+# z=lapply(z,function(a)a %>% unique()%>% nrow())
+# 
+# x=lapply(x,function(a)a=a[,c('seqnames','start','end')] %>% unique()%>% nrow())
 
-filenames=paste0(combined_tfbs_outputdir,names(combined),sep='')
-mapply(write.table, combined, file = filenames,col.names = T, row.names = F, sep = " ", quote = F)
+# filenames=paste0(combined_tfbs_outputdir,names(combined),sep='')
+# mapply(write.table, combined, file = filenames,col.names = T, row.names = F, sep = " ", quote = F)
 
 
 numb_tfbs_snps=function(x){lapply(x,function(y)y[,c('seqnames','start','end')]%>% unique() %>% nrow())}

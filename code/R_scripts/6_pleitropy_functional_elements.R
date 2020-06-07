@@ -10,36 +10,6 @@ setDTthreads(8)
 
 ### load cells 
 setwd('/data/projects/punim0586/dvespasiani/Files/')
-keys=c('seqnames','start','end')
-
-assign_names=function(x,list_df){
-  x=as.character(list.files(x,recursive=F,full.names=F))
-  names(list_df)=x
-  for (i in seq_along(list_df)){
-    assign(x[i],list_df[[i]],.GlobalEnv)}
-  return(list_df)
-}
-
-read_cells=function(x){
-  df=as.character(list.files(x,recursive = F,full.names = T)) %>% 
-    lapply(function(y) 
-      fread(y,sep = ' ',header=T) %>% 
-        makeGRangesFromDataFrame(keep.extra.columns =T) %>% 
-        as.data.table()
-    )
-  df=assign_names(x,df)
-  df=rbindlist(df)
-  df=df[
-    ,c('width','strand'):=NULL
-    ][
-    ,pleiotropy:=.N, by=.(seqnames,start,chrom_state)
-    ]
-  
-  return(df)
-}
-
-cells=read_cells('./Roadmap_data/ChromHMM_15states_cell_lines_combined/Continuous_states')
-
 
 read_states=function(x){
   x=as.character(list.files(x,recursive = F,full.names = T)) %>% 
@@ -49,7 +19,6 @@ read_states=function(x){
               ,freq_range:=ifelse(all_freq<0.05,'low','high')
               ]
     )
-  # x=x[c(2:4)]
   pop_names=c('denisova','neandertal','png') 
   names(x)=pop_names
   for (i in seq_along(x)){
@@ -60,86 +29,67 @@ read_states=function(x){
 
 snps_chrom_states=read_states('./PNG/Chromatin_states/SNPs_chromHMM_annotated/new_set/')
 
-snps_chrom_states=lapply(snps_chrom_states,function(x)
-  x=inner_join(x,cells,by=c('seqnames','element_start'='start','element_end'='end','chrom_state','cell_type')) %>% as.data.table())
+chrom_state_levels=copy(snps_chrom_states[[1]])[,chrom_state] %>% unique() %>% stringr::str_sort( numeric = TRUE)
 
-pleiotropy=function(y,split){
- pleiotropy_function=function(z){
-   df=copy(z)
-  df=lapply(df,function(x)
-    x=x[
-      ,c('element_seqnames','element_start','element_end','cell_type','cell_line'):=NULL
-      ] %>% unique())
-  df=lapply(df,function(x)
-    x=x %>% group_by(`seqnames`,`start`,`end`,`chrom_state`) %>%
-      summarise(pleiotropy=sum(pleiotropy)) %>%
-      as.data.table())
+
+pleiotropy=function(x,freq){
   
-  df=lapply(df,function(x)
-    x=x[
-      ,pleiotropy:=ifelse(pleiotropy>111,111,pleiotropy)
-      ][
-        ,pleiotropy_ranges:=ifelse(pleiotropy>=1 & pleiotropy<4,'1_3',
-                                   ifelse(pleiotropy>3 &pleiotropy<11,'4_10',
-                                          ifelse(pleiotropy>10 &pleiotropy<26,'11_25',
-                                                 ifelse(pleiotropy>25 &pleiotropy<51,'26_50','51_111'))))
-        ]
-    )
-  df=Map(mutate,df,'pop'=names(df)) %>% lapply(function(x)setDT(x))
- }
- 
-  if(split=='no'){
-    y=pleiotropy_function(y)
-    return(y)
-  } else{ 
-    y=lapply(y,function(x)x[freq_range%in%'high'])
-    y=pleiotropy_function(y)
-    return(y)
-    }
+  
+  calculate_pleiotropy=function(x){
+    x=x[,pleiotropy:=.N,by=.(seqnames,start,end,chrom_state)][,c('pleiotropy','chrom_state')] %>%
+      group_by(`chrom_state`) %>% 
+      mutate('median'=median(pleiotropy)) %>% 
+      mutate('lowq'=quantile(pleiotropy,0.25)) %>% 
+      mutate('upq'=quantile(pleiotropy,0.75))%>% as.data.table()
+    
+  }
+  
+  
+  df=copy(x)
+  
+  if(freq=='none'){
+  df1=copy(df)
+  df1=lapply(df1,function(x)x=x[,c(1:4,6)] %>% unique())
+  df1=lapply(df1,function(x)calculate_pleiotropy(x))
+  df1=Map(mutate,df1,'pop'=names(df1)) %>% lapply(function(x)setDT(x))
+                                                  
+  return(df1)
+  
+  } else {
+    df2=copy(df)
+    df2=lapply(df2,function(x)x=x[freq_range%in%freq][,c(1:4,6)] %>% unique())
+    df2=lapply(df2,function(x)calculate_pleiotropy(x))
+    df2=Map(mutate,df2,'pop'=names(df2)) %>% lapply(function(x)setDT(x))
+    
+  return(df2)
+  }
+
 }
-
-pleiotropy_snps=pleiotropy(snps_chrom_states,'no')
-pleiotropy_highfreq_snps=pleiotropy(snps_chrom_states,'high')
-
-
-# test=copy(snps_chrom_states)
-# test=lapply(test,function(x)
-#   x=x[
-#     ,c('element_seqnames','element_start','element_end','cell_type','cell_line'):=NULL
-#   ] %>% unique())
-# 
-# test=lapply(test,function(x)
-#   x=x %>% group_by(`seqnames`,`start`,`end`,`chrom_state`) %>%
-#     summarise(pleiotropy=sum(pleiotropy)) %>%
-#     as.data.table())
-# 
-# test=lapply(test,function(x)
-#   x=x[
-#     ,pleiotropy:=ifelse(pleiotropy>111,111,pleiotropy)
-#     ][
-#     ,pleiotropy_ranges:=ifelse(pleiotropy>=1 & pleiotropy<4,'1_3',
-#                                ifelse(pleiotropy>3 &pleiotropy<11,'4_10',
-#                                       ifelse(pleiotropy>10 &pleiotropy<26,'11_25',
-#                                              ifelse(pleiotropy>25 &pleiotropy<51,'26_50','51_111'))))
-#     ]
-# )
-# test=Map(mutate,test,'pop'=names(test)) %>% lapply(function(x)setDT(x))
+  
+snps_all_freq_pleiotropy=pleiotropy(snps_chrom_states,'none')
+snps_highfreq_pleiotropy=pleiotropy(snps_chrom_states,'high')
 
 pvalues=function(x){
   df=copy(x) %>% rbindlist()
   df=df %>% split(as.factor(df$chrom_state))
- 
-one_tailed_wilcoxon=function(x){
+  
+  two_tailed_ttest=function(x){
     df=copy(x)
     deni=copy(df)[pop%in%'denisova']
     nean=copy(df)[pop%in%'neandertal']
     png=copy(df)[pop%in%'png']
     
     perform_test=function(x,y){
-      x=x[,p:=wilcox.test(x$pleiotropy,y$pleiotropy,exact = F,alternative = 'l')$p.val
+      x=x[,p:=t.test(x$pleiotropy,y$pleiotropy)$p.val
           ][
-            ,statistic:=wilcox.test(x$pleiotropy,y$pleiotropy,exact = F,alternative = 'l')$stat
+            ,statistic:=t.test(x$pleiotropy,y$pleiotropy)$stat
             ][
+              ,df:=t.test(x$pleiotropy,y$pleiotropy)$parameter
+              ][
+                ,mean_aSNPs:=t.test(x$pleiotropy,y$pleiotropy)$estimate[[1]]
+                ][
+                  ,mean_naSNPs:=t.test(x$pleiotropy,y$pleiotropy)$estimate[[2]]
+                  ][
               ,p.adj:=p.adjust(p,method = 'bonferroni')
               ][
                 ,p.signif:= ifelse(`p.adj`<=0.0001,'****',
@@ -153,181 +103,191 @@ one_tailed_wilcoxon=function(x){
     nean=perform_test(nean,png) 
     combined=rbind(deni,nean) 
     return(combined)
-}
-
-df=lapply(df,function(x)one_tailed_wilcoxon(x)) %>% rbindlist()
-df=df[,c(1:3,5,6):=NULL]%>%unique()
-
+  }
+  
+  df=lapply(df,function(x)two_tailed_ttest(x)) %>% rbindlist()
+  df=df[,c('chrom_state','pop','mean_aSNPs','mean_naSNPs','statistic','df','p','p.adj','p.signif')]%>%unique()
+  
   return(df)
 }
 
-pvalues_allfreq=pvalues(pleiotropy_snps)
-pvalues_highfreq=pvalues(pleiotropy_highfreq_snps)
+pvalues_allfreq=pvalues(snps_all_freq_pleiotropy)
+pvalues_highfreq=pvalues(snps_highfreq_pleiotropy)
 
-# pvalues=copy(test) %>% rbindlist()
-# pvalues=pvalues %>% split(as.factor(pvalues$chrom_state))
+pval=list(pvalues_allfreq,pvalues_highfreq)
+pval=lapply(pval,function(x)x=x[order(factor(x$chrom_state,levels=chrom_state_levels))])
+
+write.xlsx(pval,'/home/dvespasiani/pvalue_tables/Supp_Table_4_pleiotropy_pvalues.xlsx')
+
 # 
-# one_tailed_wilcoxon=function(x){
-#   df=copy(x)
-#   deni=copy(df)[pop%in%'denisova']
-#   nean=copy(df)[pop%in%'neandertal']
-#   png=copy(df)[pop%in%'png']
-#   
-#   perform_test=function(x,y){
-#     x=x[,p:=wilcox.test(x$pleiotropy,y$pleiotropy,exact = F,alternative = 'l')$p.val
-#         ][
-#           ,statistic:=wilcox.test(x$pleiotropy,y$pleiotropy,exact = F,alternative = 'l')$stat
-#           ][
-#             ,p.adj:=p.adjust(p,method = 'bonferroni')
-#             ][
-#               ,p.signif:= ifelse(`p.adj`<=0.0001,'****',
-#                                  ifelse(`p.adj`>0.0001 &`p.adj`<=0.001,'***',
-#                                         ifelse(`p.adj`>0.001 & `p.adj`<=0.01,'**',
-#                                                ifelse(`p.adj`>0.01 & `p.adj`<=0.05,'*',' '))))
-#               ]
-#   }
-#   
-#   deni=perform_test(deni,png)
-#   nean=perform_test(nean,png) 
-#   combined=rbind(deni,nean) 
-#   return(combined)
+# prepare_data=function(x,y){
+#   df=copy(x) %>% rbindlist()
+#   df=df[
+#     ,c('chrom_state','pop','median','lowq','upq')
+#     ][
+#       ,chrom_state:=factor(chrom_state,levels = chrom_state_levels)
+#       ]  %>% unique()
+#   signif=copy(y)
+#   signif=signif[,c('chrom_state','pop','p.signif')]
+#   df_final=full_join(df,signif,by=c('pop','chrom_state')) %>% as.data.table()
+#   df_final=df_final[,p.signif:=ifelse(is.na(p.signif),' ',p.signif)]
 # }
 # 
-
-write.xlsx(pvalues_allfreq,'/home/dvespasiani/pvalue_tables/pleiotropy_pvalues_allfreq.xlsx')
-write.xlsx(pvalues_highfreq,'/home/dvespasiani/pvalue_tables/pleiotropy_pvalues_highfreq.xlsx')
-
-
-## plot
-prepare_data=function(x,pvalues){
-  df=copy(x)%>% rbindlist()
-  df=df[,pleiotropy_ranges:=NULL] %>% unique() 
-  df=df[,c('chrom_state','pleiotropy','pop')]
-  
-  pval=copy(pvalues)
-  pval=pval[,c('pop','chrom_state','p.signif')] %>% unique()
-  
-  df2=full_join(df,pvalues,by=c('chrom_state','pop')) %>% setDT()
-  df2=df2[
-    ,chrom_state:=gsub('.*_','',chrom_state)
-    ]
-  df2[is.na(df2)]=' '
-  return(df2)
-}
-
-allfreq=prepare_data(pleiotropy_snps,pvalues_allfreq)
-highfreq=prepare_data(pleiotropy_highfreq_snps,pvalues_highfreq)
-
-
-pleiotropy_violinplot=function(x){
-  
-  x$chrom_state=factor(x$chrom_state,levels = c('TssA','TssAFlnk','TxFlnk','Tx','TxWk','EnhG','Enh', 'ZNF/Rpts',
-                                                'Het','TssBiv','BivFlnk','EnhBiv','ReprPC','ReprPCWk','Quies'))
-  
-my_palette_pop=c('#C99E10', # denisova
-                 '#9B4F0F', #neandertal
-                 '#1E656D' #png
-)
-
-  names(my_palette_pop)= levels(as.factor(x$pop))
-  colScale=scale_fill_manual(name= " ",values = my_palette_pop,labels = c('Denisova','Neandertal','PNG'))
-
-  ggplot(x,aes(x=pop,y=pleiotropy,fill=pop))+
-    colScale+
-    xlab(' ')+ylab('\n Element pleiotropy \n ')+
-      geom_violin(trim=T,scale = "width")+
-      geom_boxplot(width=.04, position =  position_dodge(width = 0.2),outlier.shape = NA)+
-    geom_text(data=x, aes(x=pop, y=(111)+0.0000001, label=p.signif), col='black', size=7)+
-    # stat_compare_means(method = "wilcox.test",label = "p.signif",p.adjust.method = "BH",
-    #                     ref.group = "png",hide.ns =T,
-    #                     label.y =max(x$pleiotropy)+0.1,
-    #                     size=12)+
-    # scale_y_continuous(labels=c("0","40",'80','111'))+
-    facet_wrap(chrom_state~., ncol = 3)+
-    theme(strip.text.x = element_text(),
-          strip.text.y = element_text(hjust = 0.5),
-          strip.background = element_rect(color = 'black', linetype = 'solid'),
-          strip.background.y = element_blank(),
-          strip.background.x =element_blank(),
-          # panel.spacing=unit(1, "lines"),
-          panel.background =element_rect(fill = 'white', size = 0.5,colour = 'black'),
-          panel.grid.minor = element_blank(),
-          panel.grid.major = element_blank(),
-          legend.text = element_text(),
-          legend.title = element_text(),
-          axis.text.x = element_blank(),
-          axis.ticks.x = element_blank(),
-          axis.text.y = element_text(),
-          axis.title.y = element_text(hjust=0.5),
-          axis.text=element_text(),
-          axis.line = element_line(color = "black",size = 0, linetype = "solid"))
-
-}
-
-pdf('/home/dvespasiani/pleiotropy/pleiotropy_allfreq_plot.pdf',width = 10,height = 20)
-pleiotropy_violinplot(allfreq)
-dev.off()
-
-pdf('/home/dvespasiani/pleiotropy/pleiotropy_highfreq_plot.pdf',width = 10,height = 20)
-pleiotropy_violinplot(highfreq)
-dev.off()
-
+# snps_pleiotropy_allfreq=prepare_data(snps_all_freq_pleiotropy,pvalues_allfreq)
+# snps_pleiotropy_highfreq=prepare_data(snps_highfreq_pleiotropy,pvalues_highfreq)
 # 
-# ## second pleiotropy mean + sd
-# pleiotropy_dotplot=function(x){
-#   x=copy(x)
-#   x=x[,mean:=mean(pleiotropy),by=.(chrom_state)
-#       ][
-#         ,sd:=sd(pleiotropy),by=.(chrom_state)
-#         ][
-#           ,c(1,3,7,8,9)
-#           ] %>% unique()
-# 
-  # x$chrom_state=factor(x$chrom_state,levels = c('TssA','TssAFlnk','TxFlnk','Tx','TxWk','EnhG','Enh', 'ZNF/Rpts',
-  #                                               'Het','TssBiv','BivFlnk','EnhBiv','ReprPC','ReprPCWk','Quies'))
-
+# pleiotropy_plot=function(df){
 #   
+#   x=copy(df)
+#   x=x[,chrom_state:=gsub(".*_","",chrom_state)]
+#   
+#   x$chrom_state=factor(x$chrom_state,levels = c('TssA','TssAFlnk','TxFlnk','Tx','TxWk','EnhG','Enh', 'ZNF/Rpts',
+#                                                 'Het','TssBiv','BivFlnk','EnhBiv','ReprPC','ReprPCWk','Quies'))
+# 
 #   my_palette_pop=c('#C99E10', # denisova
-#                                     '#9B4F0F', #neandertal
-#                                     '#1E656D' #png
+#                    '#9B4F0F', #neandertal
+#                    '#1E656D' #png
 #                    )
-# 
-# names(my_palette_pop)= levels(as.factor(x$pop))
-# colScale=scale_fill_manual(name= " ",values = my_palette_pop,labels = c('Denisova','Neandertal','PNG'))
-# 
-#   ggplot(x,aes(x=pop,y=mean,fill=pop))+
-#     geom_point()+
-#     geom_errorbar(aes(ymin=mean-sd, ymax=mean+sd),width=0)+
-#     geom_text(data=x, aes(x=pop, y=(111)+0.0000001, label=p.signif), col='black', size=7)+
-#     # geom_pointrange(aes(ymin=mean-sd, ymax=mean+sd),size=0.3,position=position_dodge(0.05))+
-#     colScale+
-#     stat_summary(fun=mean, geom="line", aes(group=1)) +
-#     xlab(' ')+ylab('\n Element pleiotropy \n ')+
+#   
+#   names(my_palette_pop)= levels(as.factor(x$pop))
+#   dotcol=scale_fill_manual(name= " ",values = my_palette_pop,labels = c('Denisova','Neanderthal','PNG'))
+#   barcol=scale_color_manual(name= " ",values = my_palette_pop,labels = c('Denisova','Neanderthal','PNG'))
+#   
+#   plot=ggplot(x,aes(x=pop,y=median,fill=pop))+
+#    geom_errorbar(aes(ymin=lowq, ymax=upq,col=pop),position='dodge',width=0,size=1.2)+
+#     geom_point(size=3)+
+#     geom_point(shape = 21,colour = "black",stroke = 0.25,size=3.97)+
+#     dotcol+barcol+
+#    xlab(' ')+ylab('\n Element pleiotropy \n ')+
+#     geom_text(aes(x=pop, y=15.5, label=p.signif), col='black', size=3)+
 #    facet_wrap(chrom_state~., ncol = 3)+
 #     theme(strip.text.x = element_text(),
 #           strip.text.y = element_text(hjust = 0.5),
 #           strip.background = element_rect(color = 'black', linetype = 'solid'),
 #           strip.background.y = element_blank(),
 #           strip.background.x =element_blank(),
-#           # panel.spacing=unit(1, "lines"),
-#           panel.background =element_rect(fill = 'white', size = 0.5,colour = 'black'),
+#          panel.background =element_rect(fill = 'white', size = 0.25,colour = 'black'),
 #           panel.grid.minor = element_blank(),
 #           panel.grid.major = element_blank(),
 #           legend.text = element_text(),
 #           legend.title = element_text(),
+#           legend.position = 'bottom',
 #           axis.text.x = element_blank(),
 #           axis.ticks.x = element_blank(),
 #           axis.text.y = element_text(),
 #           axis.title.y = element_text(hjust=0.5),
 #           axis.text=element_text(),
-#           axis.line = element_line(color = "black",size = 0, linetype = "solid"))
+#           axis.line = element_blank())
+#   return(plot)
 #   
 # }
 # 
-# pdf('/home/dvespasiani/pleiotropy/pleiotropy_allfreq_dotplot.pdf',width = 10,height = 20)
-# pleiotropy_dotplot(allfreq)
+# pdf('/home/dvespasiani/pleiotropy/pleiotropy_allfreq_plot.pdf',width = 5,height = 7)
+# pleiotropy_plot(snps_pleiotropy_allfreq)
 # dev.off()
 # 
-# pdf('/home/dvespasiani/pleiotropy/pleiotropy_highfreq_dotplot.pdf',width = 10,height = 20)
-# pleiotropy_dotplot(highfreq)
+# pdf('/home/dvespasiani/pleiotropy/pleiotropy_highfreq_plot.pdf',width = 5,height = 7)
+# pleiotropy_plot(snps_pleiotropy_highfreq)
 # dev.off()
+
+
+
+#### irenes preferred version
+
+second_pleiotropy=function(x,freq){
+  
+  calculate_pleiotropy=function(x){
+    df=copy(x)
+    df=lapply(df,function(x)x=x[,pleiotropy:=.N,by=.(seqnames,start,end,chrom_state)][
+      ,totsnps_chromstate:=.N,by=.(chrom_state)
+      ][,totsnps_pleiotropy_chromstate:=.N,by=.(chrom_state,pleiotropy)][
+        ,fraction:=totsnps_pleiotropy_chromstate/totsnps_chromstate
+        ][,c('chrom_state','pleiotropy','fraction')] %>% unique())
+    
+    
+    df=lapply(df,function(x)x=x[
+      ,pleiotropy_ranges:= ifelse(pleiotropy==1 ,'1',
+                                  ifelse(pleiotropy>=2 &pleiotropy<5,'2-4',
+                                         ifelse(pleiotropy>=5 &pleiotropy<9,'5-8',
+                                                ifelse(pleiotropy>=9 &pleiotropy<13,'9-12','13-18'))))][
+                                                  ,c('pleiotropy_ranges','chrom_state','fraction')]%>%
+        group_by(`chrom_state`,`pleiotropy_ranges`) %>% 
+        mutate('median'=median(fraction)) %>% 
+        mutate('lowq'=quantile(fraction,0.25)) %>% 
+        mutate('upq'=quantile(fraction,0.75))%>% as.data.table())
+    return(df)
+  }
+  
+  df=copy(x)
+  df=lapply(df,function(x)x=x[,c('element_seqnames','element_start','element_end','cell_type'):=NULL] %>% unique())
+  if(freq=='none'){
+    df1=copy(df)
+    df1=calculate_pleiotropy(df1)
+    df1=Map(mutate,df1,'pop'=names(df1)) %>% rbindlist() %>% unique()
+    return(df1)
+  }else{
+    df2=copy(df)
+    df2=lapply(df2,function(x)x=x[freq_range%in%freq])%>% calculate_pleiotropy()
+    df2=Map(mutate,df2,'pop'=names(df2)) %>% rbindlist() %>% unique()
+    return(df2)
+  }
+ 
+}
+
+second_snps_all_freq_pleiotropy=second_pleiotropy(snps_chrom_states,'none')
+second_snps_high_freq_pleiotropy=second_pleiotropy(snps_chrom_states,'high')
+
+
+second_pleiotropy_plot=function(df){
+    x=copy(df)
+    x=x[,chrom_state:=gsub(".*_","",chrom_state)]
+
+    x$chrom_state=factor(x$chrom_state,levels = c('TssA','TssAFlnk','TxFlnk','Tx','TxWk','EnhG','Enh', 'ZNF/Rpts',
+                                                  'Het','TssBiv','BivFlnk','EnhBiv','ReprPC','ReprPCWk','Quies'))
+    x$pleiotropy_ranges=factor(x$pleiotropy_ranges,levels = c('1','2-4','5-8','9-12','13-18'))
+    my_palette_pop=c('#C99E10', # denisova
+                     '#9B4F0F', #neandertal
+                     '#1E656D' #png
+                     )
+
+    names(my_palette_pop)= levels(as.factor(x$pop))
+    dotcol=scale_fill_manual(name= " ",values = my_palette_pop,labels = c('Denisova','Neanderthal','PNG'))
+    barcol=scale_color_manual(name= " ",values = my_palette_pop,labels = c('Denisova','Neanderthal','PNG'))
+
+    plot=ggplot(x,aes(x=pleiotropy_ranges,y=median,fill=pop))+
+      geom_line(aes(group=pop,col=pop),size=0.3,position =position_dodge(width = 0.5))+
+      geom_errorbar(aes(ymin=lowq, ymax=upq,col=pop),position=position_dodge(width = 0.5),width=0,size=1.2)+
+          geom_point(size=3,position=position_dodge(width =0.5))+
+          geom_point(shape = 21,colour = "black",position=position_dodge(width = 0.51),stroke = 0.25,size=3.97)+
+      dotcol+barcol+
+     xlab(' ')+ylab('\n Fraction SNPs for pleiotropy range \n ')+
+      # geom_text(aes(x=pop, y=15.5, label=p.signif), col='black', size=3)+
+     facet_wrap(chrom_state~., ncol = 3,scales = 'free_y')+
+      theme(strip.text.x = element_text(),
+            strip.text.y = element_text(hjust = 0.5),
+            strip.background = element_rect(color = 'black', linetype = 'solid'),
+            strip.background.y = element_blank(),
+            strip.background.x =element_blank(),
+           panel.background =element_rect(fill = 'white', size = 0.25,colour = 'black'),
+            panel.grid.minor = element_blank(),
+            panel.grid.major = element_blank(),
+            legend.text = element_text(),
+            legend.title = element_text(),
+            legend.position = 'bottom',
+            # axis.text.x = element_blank(),
+            # axis.ticks.x = element_blank(),
+            axis.text.y = element_text(),
+            axis.title.y = element_text(hjust=0.5),
+            axis.text=element_text(),
+            axis.line = element_blank())
+    return(plot)
+
+  }
+
+pdf('/home/dvespasiani/pleiotropy/pleiotropy_allfreq_plot.pdf',width = 7,height = 7)
+second_pleiotropy_plot(second_snps_all_freq_pleiotropy)
+dev.off()
+
+pdf('/home/dvespasiani/pleiotropy/pleiotropy_highfreq_plot.pdf',width = 7,height = 7)
+second_pleiotropy_plot(second_snps_high_freq_pleiotropy)
+dev.off()

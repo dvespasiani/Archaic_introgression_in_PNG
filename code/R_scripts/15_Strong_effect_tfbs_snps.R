@@ -7,40 +7,53 @@ library(ggthemes);library(ggplot2);library(ggpubr)
 setDTthreads(10)
 setwd('/data/projects/punim0586/dvespasiani/Files/PNG/')
 plot_output_dir='./home/dvespasiani/tfbs_plots/'
+motif_input_dir='./Motifbreak/Tx_and_CREs/TFBSs_disrupted_10neg5/'
+
 merging_keys=c('seqnames','start','end')
 immune_cells=c('TCells','BCells')
 
-
-gtex_expr=fread('./GTEx/GTEx_Analysis_v8_gene_median_tmp/GTEx_Analysis_2017-06-05_v8_RNASeQCv1.1.9_gene_median_tpm.gct',sep='\t',header = T)
-gene_ids=gtex_expr[,c(1:2)]
-
-
-tfbs=function(x){
-  x=as.character(list.files(x,full.names = T,recursive = F)) %>% 
+read_tfbs_snps=function(x){
+  x=as.character(list.files(x,recursive = F,full.names = T)) %>% 
     lapply(function(y)
-      fread(y,sep=' ',header = T,
-            select =c('seqnames','start','end','REF','ALT','geneSymbol','effect')) %>% unique())
-      x=lapply(x,function(y)
-        y=y[
-              ,duplicated_effect:=.N,by=.(seqnames,start,end,geneSymbol)
-              ]%>% group_by(seqnames,start,end,geneSymbol) %>%
-        filter(duplicated_effect==max(duplicated_effect)) %>% as.data.table()
-        # [
-        # ,delta_pct:=abs(pctRef-pctAlt)
-        # ] %>% group_by(seqnames,start,end,geneSymbol) %>%
-        # filter(delta_pct==max(delta_pct)) %>% as.data.table()
-    )
-  x=x[c(2:4)] # remove ambiguous like this for now
-  x=lapply(x,function(y)y=semi_join(y,gene_ids,by=c('geneSymbol'='Description')) %>%
-             as.data.table()) ## remove TFs absent from gtex (only D/OBOXs)
+      fread(y,sep=' ',header = T)[
+        ,end:=start+1
+      ])
   pop_names=c('denisova','neandertal','png')
   names(x)=pop_names
   for (i in seq_along(x)){
     assign(pop_names[i],x[[i]],.GlobalEnv)}
   return(x)
-  }
+}
 
-snps_tfbs=tfbs('./Motifbreak/Tx_and_CREs/TFBSs_disrupted_10neg5/combined/')
+
+snps_tfbs=read_tfbs_snps(paste(motif_input_dir,'jaspar2018/',sep=''))
+lapply(snps_tfbs,function(x)x[,c('seqnames','start','end')] %>% unique() %>% nrow())
+
+# tfbs=function(x){
+#   x=as.character(list.files(x,full.names = T,recursive = F)) %>% 
+#     lapply(function(y)
+#       fread(y,sep=' ',header = T,
+#             select =c('seqnames','start','end','REF','ALT','geneSymbol','dataSource','effect')) %>% unique())
+#       x=lapply(x,function(y)
+#         y=y[
+#               ,duplicated_effect:=.N,by=.(seqnames,start,end,geneSymbol)
+#               ]%>% group_by(seqnames,start,end,geneSymbol) %>%
+#         filter(duplicated_effect==max(duplicated_effect)) %>% as.data.table()
+#         # [
+#         # ,delta_pct:=abs(pctRef-pctAlt)
+#         # ] %>% group_by(seqnames,start,end,geneSymbol) %>%
+#         # filter(delta_pct==max(delta_pct)) %>% as.data.table()
+#     )
+#   x=x[c(2:4)] # remove ambiguous like this for now
+# 
+#   pop_names=c('denisova','neandertal','png')
+#   names(x)=pop_names
+#   for (i in seq_along(x)){
+#     assign(pop_names[i],x[[i]],.GlobalEnv)}
+#   return(x)
+#   }
+# 
+# snps_tfbs=tfbs('./Motifbreak/Tx_and_CREs/TFBSs_disrupted_10neg5/combined/')
 
 
 #LOOK AT PROPORTION OF STRONG TFBS ON ≠ CELLS FOR THE 3 PEOPLE
@@ -51,46 +64,59 @@ read_active_states=function(x){
               chrom_state%in%c('2_TssAFlnk','3_TxFlnk',"6_EnhG","7_Enh")
               ][
                 ,chrom_state:=NULL
-                ] %>% unique()
+                ][
+                  ,numbsnps:=.N,by=.(cell_type,cell_line)
+                  ] %>% unique()
     )
-  # x=x[c(2:4)] # remove ambiguous like this for now
 }
 
-states=read_active_states('./Chromatin_states/SNPs_chromHMM_annotated/new_set') # remove the temp directory once the old script is optimized
-
-snps_tfbs_cres=purrr::map2(snps_tfbs,states,inner_join,by=merging_keys)
-snps_tfbs_cres=lapply(snps_tfbs_cres,function(x)setDT(x))
+states=read_active_states('./Chromatin_states/SNPs_chromHMM_annotated/new_set') 
+snps_tfbs_cres=purrr::map2(snps_tfbs,states,inner_join,by=merging_keys) %>% lapply(function(x)setDT(x))
+lapply(snps_tfbs_cres,function(x)x[,c('seqnames','start','end')] %>% unique() %>% nrow())
 
 strong_highfreq=function(x){
-  x=copy(x) %>% 
+  x=copy(x) %>%
     lapply(function(y)
-      y=y[all_freq>=0.2 & effect%in%'strong'])
-  x=lapply(x,function(y)y=y[
-    ,effect_strenght:=ifelse(effect=='weak',as.numeric(0),as.numeric(1))
-    ] %>% group_by(seqnames,start,end) %>%
-    filter(effect_strenght==max(effect_strenght)) %>% as.data.table() %>% unique()
-  )
+      y=y[effect%in%'strong'][,all_freq:=round(all_freq,2)][all_freq>=0.2][
+        ,c('seqnames','start','end','REF','ALT','cell_type','cell_line')] %>% unique())
+
   x=lapply(x,function(y)
     y=y[
-      ,number_snps_per_cell:=uniqueN(c(seqnames,start,end)),by=(cell_type)
+      ,number_snps_per_cell:=.N,by=.(cell_type,cell_line)
       ][
-        ,number_snps:=uniqueN(c(seqnames,start,end))
-        
+        ,number_snps:=.N
+
         ][
           ,fraction_snps_per_cell_per_effect:=number_snps_per_cell/number_snps
           ])
-  # x=assign_names(x)
-  x=Map(mutate,x,'pop'=names(x))
+   x=Map(mutate,x,'pop'=names(x))
   x=lapply(x,function(y)setDT(y))
 }
 
+snps_tfbs_highfreq_strong=strong_highfreq(snps_tfbs_cres)
+lapply(snps_tfbs_highfreq_strong,function(x)x[,c('seqnames','start','end')] %>% unique() %>% nrow())
 
-snps_tfbs_highfreq_strong=strong_highfreq(snps_tfbs_cres) 
+### second option: fraction tfbs/cres per cell type
+# 
+# tfbs_fraction_celltype=function(x){
+#   x=copy(x) %>% 
+#     lapply(function(y)
+#       y=y[all_freq>=0.2][effect%in%'strong'][
+#         ,c('seqnames','start','end','cell_type','cell_line','numbsnps')] %>% unique())
+#   
+#   x=lapply(x,function(y)
+#     y=y[
+#       ,number_tfbs_per_cell:=.N,by=.(cell_type,cell_line)
+#       ][
+#           ,fraction_snps_per_cell_per_effect:=number_tfbs_per_cell/numbsnps
+#           ])
+#   x=Map(mutate,x,'pop'=names(x))
+#   x=lapply(x,function(y)setDT(y))
+# }
+# 
+# snps_tfbs_highfreq_strong=tfbs_fraction_celltype(snps_tfbs_cres) 
 # lapply(snps_tfbs_highfreq_strong,function(x)x[,c('seqnames','start','end')] %>% unique() %>% nrow())
-## 615 Amb
-## 1802 Deni
-## 1630 Nean
-## 9936 PNG
+
 
 selected_snps=copy(snps_tfbs_highfreq_strong)%>% rbindlist()
 selected_snps=selected_snps[
@@ -98,20 +124,19 @@ selected_snps=selected_snps[
   ] %>% unique()
 
 
-
 stat_test_prop=copy(selected_snps)
 stat_test_prop=stat_test_prop %>% split(as.factor(stat_test_prop$cell_line))
 
-one_tailed_wilcoxon=function(x){
+two_tailed_wilcoxon=function(x){
   df=copy(x)
   deni=copy(df)[pop%in%'denisova']
   nean=copy(df)[pop%in%'neandertal']
   png=copy(df)[pop%in%'png']
   
 perform_test=function(x,y){
-    x=x[,p:=wilcox.test(x$fraction_snps_per_cell_per_effect,y$fraction_snps_per_cell_per_effect,alternative = 'g',exact = F)$p.val
+    x=x[,p:=wilcox.test(x$fraction_snps_per_cell_per_effect,y$fraction_snps_per_cell_per_effect,exact = F)$p.val
         ][
-      ,statistic:=wilcox.test(x$fraction_snps_per_cell_per_effect,y$fraction_snps_per_cell_per_effect,alternative = 'g',exact = F)$stat
+      ,statistic:=wilcox.test(x$fraction_snps_per_cell_per_effect,y$fraction_snps_per_cell_per_effect,exact = F)$stat
       ][
         ,p.adj:=p.adjust(p,method = 'bonferroni')
         ][
@@ -128,7 +153,7 @@ perform_test=function(x,y){
   return(combined)
 }
 
-stat_test_prop=lapply(stat_test_prop,function(x)one_tailed_wilcoxon(x)) %>% rbindlist()
+stat_test_prop=lapply(stat_test_prop,function(x)two_tailed_wilcoxon(x)) %>% rbindlist()
 
 
 ## make two Supp tables (fraction snps and pvals)
@@ -146,15 +171,11 @@ enrich_pval_tables=function(x,table){
   }
 
 
-
 # tfbs_tables=enrich_pval_tables(stat_test_prop,'fraction_snps_per_cell_type')
-# write.xlsx(tfbs_tables,'~/pvalue_tables/Supp_Table_8_TFBS_pvalues.xlsx')
-
+# write.xlsx(tfbs_tables,'~/pvalue_tables/Supp_Table_TFBS_pvalues.xlsx')
 
 selected_snps$cell_line=factor(selected_snps$cell_line,levels=c('Adipose','BCells','Brain','Digestive','Epithelial','ES_cells','ES_derived_cells','Heart','IMR90_fetal_lung_fibroblast',
                                                      'iPSC','Mesenchymal','Muscle','Myosatellite','Neurospheres','Other_cells','Smooth_muscle','TCells','Thymus'))
-
-
 ## 
 selected_snps_plot=function(df,cells){
   
@@ -176,12 +197,8 @@ colScale=scale_fill_manual(name= " ",values = my_palette_pop,labels = c('Denisov
   xlab(' ')+ylab('\n Fraction TFBS-SNPs per epigenome \n ')+
     geom_boxplot(width=.1, position =  position_dodge(width = 0.4),outlier.size=0.2)+
     geom_jitter(position=position_jitter(0.1),size=0.2)+
-    geom_text(data=stat_test_prop, aes(x=pop, y=max(df$fraction_snps_per_cell_per_effect)+0.047, label=p.signif), col='black', size=7)+
-   #   stat_compare_means(method = "wilcox.test",label = "p.signif",
-  #                      ref.group = "png",hide.ns =T,
-  #                      label.y =max(df$fraction_snps_per_cell_per_effect+0.05),
-  #                      size=10)+
-  facet_wrap(cell_line~., ncol = 4)+
+    geom_text(data=stat_test_prop, aes(x=pop, y=max(df$fraction_snps_per_cell_per_effect), label=p.signif), col='black', size=7)+
+  facet_wrap(cell_line~., ncol = 4,scales = 'free_y')+
     theme(strip.text.x = element_text(),
           strip.text.y = element_text(hjust = 0.5),
           strip.background = element_rect(color = 'black', linetype = 'solid'),
@@ -246,8 +263,8 @@ stat_test=stat_test %>% split(as.factor(stat_test$pop)) %>%
   lapply(function(x)x=x %>% split(as.factor(x$cell_line)) %>%
            lapply(function(y)
              y=y %>% 
-               mutate('p'=wilcox.test(y$ts_tv_ratio,alternative = 'l',mu=2,exact = F,paired = F)$p.val)%>%
-               mutate('statistic'=wilcox.test(y$ts_tv_ratio,alternative = 'l',mu=2,exact = F,paired = F)$stat)%>% 
+               mutate('p'=wilcox.test(y$ts_tv_ratio,mu=2,exact = F,paired = F)$p.val)%>%
+               mutate('statistic'=wilcox.test(y$ts_tv_ratio,mu=2,exact = F,paired = F)$stat)%>% 
                mutate('p.adj'=p.adjust(p,method = 'bonferroni'))%>%
                mutate('p.signif'=ifelse(`p.adj`<=0.0001,'****',
                                                  ifelse(`p.adj`>0.0001 &`p.adj`<=0.001,'***',
@@ -277,10 +294,8 @@ enrich_pval_tables=function(x,table){
 }
 
 
-
 # ts_tv_tables=enrich_pval_tables(stat_test,'Ts_Tv_ratio')
-# write.xlsx(ts_tv_tables,'~/pvalue_tables/Supp_Table_9_TsTv_pvalues.xlsx')
-
+# write.xlsx(ts_tv_tables,'~/pvalue_tables/Supp_Table_TsTv_pvalues.xlsx')
 
 tstv_ratio_plot=function(df,cells){
   df=df[cell_line%in%cells]
@@ -346,14 +361,14 @@ read_atacseq=function(path){
   x=fread(path,sep='\t',header = T)[
     ,c('seqnames','start','end'):= tstrsplit(`peak_id` , "_", fixed=TRUE)
     ][
-      ,c('seqnames','start','end','contrast')
+      ,c('seqnames','start','end')
       ][
         ,start:=as.numeric(start)
         ][
           ,end:=as.numeric(end)
           ][
             ,cell_state:=state
-          ]
+          ] %>% setorderv(c('seqnames','start'),1)%>% unique()
   return(x)
   
 }
@@ -361,7 +376,7 @@ read_atacseq=function(path){
 rested_atacseq=read_atacseq('../Calderon_atac_seq_peaks/rested_cells')
 stimulated_atacseq=read_atacseq('../Calderon_atac_seq_peaks/stimulated_cells')
 immune_atacseq=rbind(rested_atacseq,stimulated_atacseq)
-
+# immune_atacseq=immune_atacseq[,n:=.N,by=.(seqnames,start,end)][n==1][,n:=NULL]
 ## Immune strong tfbs snps in atac peaks 
 selected_tfbs_atac_peaks=function(tfbs,cells){
   tfbs=lapply(tfbs,function(x)x=x[cell_line%in%cells])
@@ -389,13 +404,12 @@ immune_tfbs_atac=selected_tfbs_atac_peaks(snps_tfbs_highfreq_strong,immune_cells
 ## 11024 PNG (522 strong)
 
 ## fraction in rested/stimulated
-## if variant is present in both condition select the stimulated one 
 stimulated_vs_rested=function(x){
   x=copy(x) %>% lapply(function(y)
   y=y[
     ,'length':=.N,by=.(seqnames,start,end)
     ][
-    ,'cell_condition':=ifelse(length==2,'stimulated',`cell_state`)
+    ,'cell_condition':=ifelse(length==2,'both',`cell_state`)
     ][
       ,c('seqnames','start','end','cell_condition','pop')
     ] %>% unique()
@@ -418,46 +432,56 @@ x=x[
 immune_stimulated_rested=stimulated_vs_rested(immune_tfbs_atac)
 
 ## enrichment in these elements
-open_chrom_regions=copy(immune_atacseq)[,4:=NULL] %>% unique()
-open_chrom_regions=open_chrom_regions[,number_snps:=.N
-                                      ][,number_snps_per_condition:=.N,by=.(cell_state)
-                                      ][,cell_condition:=cell_state][,c(5:7)
+open_chrom_regions=copy(immune_atacseq) %>% unique()
+open_chrom_regions=open_chrom_regions[
+  ,'length':=.N,by=.(seqnames,start,end)
+  ][
+    ,'cell_condition':=ifelse(length==2,'both',`cell_state`)
+    ][,cell_state:=NULL][
+      ,number_snps:=.N
+      ][
+        ,number_snps_per_condition:=.N,by=.(cell_condition)
+        ][
+                                            ,c('cell_condition','number_snps_per_condition','number_snps')
                                           ][
-                                            ,fraction:=number_snps_per_condition/number_snps][,pop:='Calderon et al.'] %>% unique()
+                                            ,fraction:=number_snps_per_condition/number_snps
+                                            ][
+                                              ,pop:='Calderon et al.'
+                                              ] %>% unique()
 
 immune_stimulated_rested=rbind(immune_stimulated_rested,open_chrom_regions)
 
-
-test_enrichment=function(x,population){
-  df=copy(x)[!pop%in%c(population,'Calderon et al.') 
-             ][
-               ,c(1:3,5)][
-                 ,totsnps_percond:=sum(number_snps_per_condition),by=.(cell_condition)
-                 ][
-                   ,totnasnps:=522
-                   ][
-                     !pop%in%'png' 
-                     ][
-                       ,test:=phyper(number_snps_per_condition-1,totsnps_percond,totnasnps,number_snps,lower.tail=F)
-                       
-                       ]
+test_enrichment=function(file,condition,selected_pop){
+  df=copy(file)[pop%in% c('denisova','neandertal') & cell_condition%in%condition][
+    ,fraction:=NULL
+    ][
+      ,totsnps_percond:=sum(number_snps_per_condition)
+      ][
+        ,tot_other_asnps:=ifelse(selected_pop=='denisova',number_snps[[2]],number_snps[[1]])
+        ][
+          pop%in%selected_pop
+          ][
+            ,test:=phyper(number_snps_per_condition-1,number_snps,tot_other_asnps,totsnps_percond,lower.tail = F)
+                        ]
 }
 
-nean_enrichmnet=test_enrichment(immune_stimulated_rested,'denisova')
-deni_enrichmnet=test_enrichment(immune_stimulated_rested,'neandertal')
+nean_enrichmnet=test_enrichment(immune_stimulated_rested,'rested','neandertal')
+deni_enrichmnet=test_enrichment(immune_stimulated_rested,'stimulated','denisova')
 
 immune_stimulated_rested$pop=factor(immune_stimulated_rested$pop,levels=c('denisova','neandertal','png','Calderon et al.'))
 
 ## plot 
-my_palette_cells=c('azure3', #rested
-                   'lightgoldenrod3' # stimulated 
-)
+my_palette_cells=c( 'azure3', # both
+                   'ivory2',#rested
+                   'lightgoldenrod3'# stimulated
+                   )
 
 names(my_palette_cells)=levels(as.factor(immune_stimulated_rested$cell_condition))
-colScale_cells=scale_fill_manual(name= " ",values = my_palette_cells,labels = c('Rested','Stimulated'))
+colScale_cells=scale_fill_manual(name= " ",values = my_palette_cells,labels = c('Both','Rested','Stimulated'))
 
 cell_condition_plot=ggplot(immune_stimulated_rested,aes(x=pop,y=fraction,fill=cell_condition))+
-  geom_bar(stat='identity')+colScale_cells+
+  geom_bar(stat='identity')+
+  colScale_cells+
   scale_x_discrete(labels=c("denisova" = "Denisova","neandertal" = "Neandertal",'png'='PNG','Calderon et al.'='Calderon et al.'))+
   ylab('\n Fraction TFBS-SNPs in open chromatin regions  \n')+
   xlab(' ')+

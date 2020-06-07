@@ -65,7 +65,7 @@ tfbs_snps=purrr::map2(tfbs_snps,tfbs_eqtls,full_join,by=c('seqnames','start','en
 
 
 ## combine with great target genes and de genes
-tfbs_snps_final=purrr::map2(tfbs_cd targets,tfbs_snps,full_join,by=c('seqnames','start','end')) %>%
+tfbs_snps_final=purrr::map2(tfbs_eqtls,tfbs_targets,tfbs_snps,full_join,by=c('seqnames','start','end')) %>%
   lapply(function(x)x=x%>% dplyr::select(c(1:3,7:36,4:6)) %>%as.data.table() %>% setorderv(c('seqnames','start','end'),1))
 
 tfbs_snps_final=lapply(tfbs_snps_final,function(x)x=inner_join(x,rsids,by=c('seqnames','start')) %>% as.data.table())

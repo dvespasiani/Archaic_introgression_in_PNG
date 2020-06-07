@@ -101,7 +101,7 @@ GO_tables=function(x){
     y=getEnrichmentTables(y,ontology='GO Biological Process'))
   
 df_list=list(df[[1]][[1]],df[[2]][[1]],df[[3]][[1]])
-
+df_list=lapply(df_list,function(x)x=as.data.table(x)[Hyper_Adjp_BH<=0.01])
 pop_names=c('denisova','neandertal','png')
   names(df_list)=pop_names
   for (i in seq_along(df_list)){
@@ -110,8 +110,8 @@ pop_names=c('denisova','neandertal','png')
 }
 
 snps_go_enrichment=GO_tables(snps_great)
-# 
-# write.xlsx(snps_go_enrichment[c(1:2)],'~/pvalue_tables/Supp_Table_9_GO_enriched_terms.xlsx',append=T)
+
+write.xlsx(snps_go_enrichment,'~/pvalue_tables/Supp_Table_GO_enriched_terms.xlsx',append=T)
 
 ## plot go bp first 25 terms for simplicity of visualization
 go_bp=Map(mutate,snps_go_enrichment,'pop'=names(snps_go_enrichment))
@@ -132,10 +132,7 @@ go_enrichment_plot=function(x,y){
       axis.text.y=element_text(angle=0, vjust=0.8),
       axis.title=element_text(),
       axis.line = element_line(color = "black",size = 0, linetype = "solid"),
-      # legend.key=element_blank(),    
-      # legend.key.size=unit(1, "cm"),      
-      # legend.text=element_text(),
-      panel.background =element_rect(fill = 'white', size = 0.5,colour = 'black'),
+     panel.background =element_rect(fill = 'white', size = 0.5,colour = 'black'),
       panel.grid.minor = element_blank(),
       panel.grid.major = element_blank(),
       title=element_text()) +
@@ -172,7 +169,7 @@ mapply(write.table,snps_gene_targets, file = filenames,col.names = T, row.names 
 significant_go_terms=copy(snps_go_enrichment) %>%
   lapply(function(x)
   x=as.data.table(x)[
-    Hyper_Adjp_BH<0.01
+    Hyper_Adjp_BH<=0.01
   ][,1] %>% unique()
 )
 
@@ -189,7 +186,6 @@ genes_assoc_sign_gos=lapply(genes_assoc_sign_gos,function(x)setDT(x))
 
 target_genes_assoc_sign_gos=purrr::map2(snps_gene_targets,genes_assoc_sign_gos,inner_join,by=c('gene'='hgnc_symbol'))
 target_genes_assoc_sign_gos=lapply(target_genes_assoc_sign_gos,function(x)setDT(x))
-
 
 ## get deni genes for cytoscape
 deni_genes_for_cytoscape=copy(snps_gene_targets[[1]])
@@ -214,7 +210,7 @@ write.table(deni_genes_for_cytoscape,paste(top25_go_genes,'denisova_top25_genes'
 
 mtw_kor_de=fread('./DE_genes/DE_genes_MTW_KOR.txt',sep=' ',header = F,drop='V2',
                  col.names = c("genes","logFC","AveExpr", "t", "P.Value","adj.P.Val", "B"))[
-                   adj.P.Val<0.01
+                   adj.P.Val<=0.01
                    ]
 tfbs_DE_targets=function(x){
   x=inner_join(x,mtw_kor_de,by=c('ensembl_gene_id'='genes')) %>% 
@@ -290,7 +286,7 @@ mapply(write.table,de_target_genes, file = de_filenames,col.names = T, row.names
 
 
 ## see how many are within W indonesia
-denisova_in_w_indo=fread('../Original_files_per_region/Denisova/deni_w_indo',sep='\t',header = T,drop=c(11:14))
+denisova_in_w_indo=fread('../Original_files_per_region/Denisova/deni_w_indo.gz',sep='\t',header = T,drop=c(11:14))
 neandertal_in_w_indo=fread('../Original_files_per_region/Neandertal/nean_w_indo',sep='\t',header = T,drop=c(11:14))
 
 shared_snps=function(de,windo_snps){
@@ -308,7 +304,7 @@ shared_snps=function(de,windo_snps){
 
 deni_shared=shared_snps(DE_targets[[1]],denisova_in_w_indo) # 48 shared  between w indo and png
 nean_shared=shared_snps(DE_targets[[2]],neandertal_in_w_indo) # 102 shared between w indo and png
-png_shared=shared_snps(DE_targets[[3]],windo_nasnps) # shared between w indo and png
+# png_shared=shared_snps(DE_targets[[3]],windo_nasnps) # shared between w indo and png
 
 
 # barplot alleles shared between png and w indo

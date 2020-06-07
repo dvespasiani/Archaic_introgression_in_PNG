@@ -7,6 +7,10 @@ setDTthreads(8)
 # READ COMPONENTS 
 setwd('/data/projects/punim0586/dvespasiani/Files/') 
 
+output_dir='./PNG/Chromatin_states/D1_D2/new_set/'
+simplified_dir='./PNG/Chromatin_states/D1_D2/new_set/'
+
+
 read_components=function(x){
   x=as.character(list.files(x,recursive = F,full.names = T)) %>% 
     lapply(function(y)
@@ -28,13 +32,13 @@ denisova_components=read_components('./Denisova_components/')
 # Denisova SNPs 
 denisova_in_png=fread('./PNG/Grouped_filtered_snps/denisova_png',sep=' ',header = T)[
   ,seqnames:=CHR
-][
- ,start:=FROM
-][
-  ,end:=TO
-][
-  ,c(1:3):=NULL
-]
+  ][
+    ,start:=FROM
+    ][
+      ,end:=TO
+      ][
+        ,c(1:3):=NULL
+        ]
 
 # merge deni snps with components
 keys=c('seqnames','start','end')
@@ -105,23 +109,25 @@ lowfreq_deni=copy(sorted_denisovans) %>% lapply(function(x)x[freq_range%in%'low'
 # lapply(lowfreq_deni,function(x) x=x[,c('seqnames','start','end'] %>% unique() %>% nrow())
 
 ## annotate them again with chromstates
-assign_cell_names=function(x,list_df){
-  x=as.character(list.files(x,recursive=F,full.names=F))
-  names(list_df)=x
-  for (i in seq_along(list_df)){
-    assign(x[i],list_df[[i]],.GlobalEnv)}
-  return(list_df)
-}
-
 read_cells=function(x){
-  df=as.character(list.files(x,recursive = F,full.names = T)) %>% 
-    lapply(function(y) fread(y,sep = ' ',header=T) %>% makeGRangesFromDataFrame(keep.extra.columns =T) %>% 
-             as.data.table()
+  cells=as.character(list.files(x,recursive = F,full.names = T)) %>% 
+    lapply(function(y) 
+      fread(y,sep = ' ',header=T) %>% 
+        makeGRangesFromDataFrame(keep.extra.columns =T) %>% 
+        as.data.table()
     )
-  df=assign_cell_names(x,df)
-  return(df)
+  cells=lapply(cells,function(x)x=x[,width:=as.numeric(width)][,state_coverage:=sum(width),by=.(chrom_state,cell_type)])
+  cell_names=as.character(list.files(x,recursive=F,full.names=F))
+  cell_names=gsub("\\..*","",cell_names)
+  names(cells)=cell_names
+  for (i in seq_along(cells)){
+    assign(cell_names[i],cells[[i]],.GlobalEnv)}
+  
+  cells=cells[c(1:18)] # remove the encode ones
+  
+  return(cells)
+  
 }
-
 
 cells=read_cells('./Roadmap_data/ChromHMM_15states_cell_lines_combined/Continuous_states')
 
@@ -189,118 +195,59 @@ chromatin_state_annotation=function(cell,alleles){
   cell=lapply(cell,function(cell)
     alleles=lapply(alleles,function(alleles)
       foverlaps(cell,alleles, type="within")[
-        ,element_seqnames :=seqnames
+        ,element_seqnames:=seqnames
         ][
           ,c('seqnames','i.start','i.end','ref','alt','ancestral','all_freq','freq_range',
-             'element_seqnames','start','end','width','chrom_state','cell_type')
-          ] %>% 
-        setnames(c('seqnames','start','end','ref','alt','ancestral','all_freq','freq_range',
-                   'element_seqnames','element_start','element_end','element_width',
-                   'chrom_state','cell_type')) %>% unique()
+             'chrom_state','cell_type','state_coverage','element_seqnames','start','end')
+          ] %>% setnames(old= c('start','end','i.start','i.end'),new = c('element_start','element_end','start','end'))
     )
   )
 }
 
 snps_chromatin_states=chromatin_state_annotation(sorted_denisovans,cells) 
 
-altai_chromatin_states=rbindlist(snps_chromatin_states[[1]])
+dx_chromatin_states=rbindlist(snps_chromatin_states[[1]])
 d1_chromatin_states=rbindlist(snps_chromatin_states[[2]])
 d2_chromatin_states=rbindlist(snps_chromatin_states[[3]])
 
-denisovans_chromatin_states=list(altai_chromatin_states,d1_chromatin_states,d2_chromatin_states)
-denisovans_chromatin_states=lapply(denisovans_chromatin_states,function(x)cell_lines(x))
+denisovans_chromatin_states=list(dx_chromatin_states,d1_chromatin_states,d2_chromatin_states) %>% lapply(function(x)cell_lines(x))
 
-snpdensities=function(df,freq){
-  if(freq=='nosplit'){
-    x=copy(df)
-    x=x[
-      ,'numbsnps_perelement_perepigenome':= .N, by=.(cell_type,chrom_state,element_seqnames,element_start,element_end)
-      ][
-        ,'density_snps_perelement_perepigenome':= numbsnps_perelement_perepigenome/element_width]
-    
-    y=copy(x)
-    
-    y=y[
-      ,c('seqnames','start','end','chrom_state','cell_type','cell_line',
-         'density_snps_perelement_perepigenome',
-         'numbsnps_perelement_perepigenome')
-      ] %>% unique()
-    y=y[
-      ,'total_snps_perstate_perepigenome':= .N, by=.(cell_type,chrom_state,cell_line)
-      ][
-        ,'total_snpdens_perepigenome':=sum(density_snps_perelement_perepigenome),by=.(cell_type)
-        ][
-          ,'sum_snpdens_perstate_perepigenome':=sum(density_snps_perelement_perepigenome),by=.(cell_type,chrom_state)
-          ][
-            ,'fraction_snpdens_perstate_perepigenome':=sum_snpdens_perstate_perepigenome/total_snpdens_perepigenome]
-    z=merge(x,y,all=T)
-    return(z)
-  } else{
-    x=copy(df)
-    x=x[
-      ,'numbsnps_perelement_perepigenome_perfreqrange':= .N, by=.(cell_type,element_seqnames,element_start,element_end,freq_range)][
-        ,'density_snps_perelement_perepigenome_perfreqrange':= numbsnps_perelement_perepigenome_perfreqrange/element_width]
-    y=copy(x)
-    y=y[
-      ,c('seqnames','start','end','chrom_state','cell_type','cell_line',
-         'density_snps_perelement_perepigenome_perfreqrange','numbsnps_perelement_perepigenome_perfreqrange','freq_range')
-      ] %>% unique()
-    y=y[
-      ,'total_snps_perstate_perepigenome_perfreqrange':= .N, by=.(cell_type,chrom_state,cell_line,freq_range)
-      ][
-        ,'total_snpdens_perepigenome_perfreqrange':=sum(density_snps_perelement_perepigenome_perfreqrange),by=.(freq_range,cell_type)
-        ][
-          ,'sum_snpdens_perstate_perepigenome_perfreqrange':=sum(density_snps_perelement_perepigenome_perfreqrange),by=.(freq_range,cell_type,chrom_state)
-          ][
-            ,'fraction_snpdens_perstate_perepigenome_perfreqrange':=sum_snpdens_perstate_perepigenome_perfreqrange/total_snpdens_perepigenome_perfreqrange]
-    a=merge(x,y,all=T)
-    return(a)
-  }
-}
-
-
-snps_nofreqsplit=lapply(denisovans_chromatin_states,function(x)snpdensities(x,'nosplit'))
-snps_freqsplit=lapply(denisovans_chromatin_states,function(x)snpdensities(x,'split'))
-
-#merge dfs
-combine_data=function(x,y){
-  keycolumns=c(
-    'seqnames','start','end','ref','alt','ancestral',
-    'element_seqnames','element_start','element_end','element_width',
-    'chrom_state','cell_type','cell_line','all_freq','freq_range')
-  z=purrr::map2(x,y,merge,by=keycolumns,all=T)
-  pop_names=c('0','1','2')
-  names(z)=pop_names
-  for (i in seq_along(z)){
-    assign(pop_names[i],z[[i]],.GlobalEnv)}
+asnps_enrichment=function(x){
+  df=copy(x)
+  df=lapply(df,function(y)y=y[,numbsnps_perstate_percelltype:= .N, by=.(cell_type,chrom_state)
+                              ][
+                                ,c('chrom_state','cell_type','cell_line','numbsnps_perstate_percelltype')
+                                ]%>% unique())
   
-  z=Map(mutate,z,'deni_component'=names(z)) %>% rbindlist()
-  return(z)
+  enrichment=function(x,y){
+    
+    archaic=x[y,on=c('chrom_state','cell_type','cell_line')] %>% na.omit()
+    
+    archaic=archaic[
+      ,asnps_nasnps_ratio:=numbsnps_perstate_percelltype/i.numbsnps_perstate_percelltype
+      ][
+        ,mean_asnps_nasnps_ratio:=mean(asnps_nasnps_ratio)
+        ][
+          ,enrichment:=asnps_nasnps_ratio/mean_asnps_nasnps_ratio
+          ][
+            ,c('chrom_state', 'cell_type','cell_line','enrichment','numbsnps_perstate_percelltype','mean_asnps_nasnps_ratio')
+            ] %>% unique()
+    
+  }
+  
+  d1=copy(df[[2]])
+  d2=copy(df[[3]])
+  
+  deni_enrich=enrichment(d1,d2)
+  return(deni_enrich)
 }
 
-snps_final=combine_data(snps_nofreqsplit,snps_freqsplit) 
+snps_nofreqsplit=asnps_enrichment(denisovans_chromatin_states)
+snps_freqsplit=lapply(denisovans_chromatin_states,function(x)x=x[freq_range%in%'high'])
+snps_freqsplit=asnps_enrichment(snps_freqsplit)
 
-deni_output_dir='./PNG/Chromatin_states/D1_D2/new_set/'
-filenames=paste0(deni_output_dir,'denisovans_snpdensities',sep='')
-simplified_filnames=paste0(deni_output_dir,'denisovans_simplified',sep='')
+filename_allfreq=paste0(paste0(simplified_dir,'all_freq/',sep=''),'d1_versus_d2',sep='')
+write.table(snps_nofreqsplit, file = filename_allfreq,col.names = T, row.names = F, sep = " ", quote = F)
 
-write.table(snps_final,filenames,row.names=FALSE, sep=" ", quote=F)
-
-## need only chromstate + cell + freq + densities + deni component
-simplified=function(x){
-  x[,.(chrom_state,cell_type,cell_line,freq_range,deni_component,
-       total_snps_perstate_perepigenome,
-       fraction_snpdens_perstate_perepigenome,
-       total_snps_perstate_perepigenome_perfreqrange,
-       fraction_snpdens_perstate_perepigenome_perfreqrange)] %>% unique()
-}
-snps_simplified=simplified(snps_final)
-
-write.table(snps_simplified,simplified_filnames,row.names=FALSE, sep=" ", quote=F)
-
-
-
-
-
-
-
+filename_high=paste0(paste0(simplified_dir,'high_freq/',sep=''),'d1_versus_d2',sep='')
+write.table(snps_freqsplit, file = filename_high,col.names = T, row.names = F, sep = " ", quote = F)
