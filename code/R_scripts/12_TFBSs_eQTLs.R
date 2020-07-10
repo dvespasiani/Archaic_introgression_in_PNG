@@ -79,11 +79,10 @@ cis_eqtls_hg19=rbindlist(cis_eqtls_hg19)
 # read tfbs and merge dfs
 tfbs=function(x){
  x=as.character(list.files(x,full.names = T,recursive = F)) %>% 
-    lapply(function(y)
-fread(y,sep=' ',header = T,
-            drop=c('Refpvalue','Altpvalue','dataSource')))
+    lapply(function(y)fread(y,sep=' ',header = T)[
+      !dataSource%in%'HOCOMOCOv11-secondary-D'
+    ])
  
- x=x[c(2:4)] #remove ambiguous
 pop_names=c('denisova','neandertal','png')
 names(x)=pop_names
 for (i in seq_along(x)){
@@ -94,9 +93,9 @@ return(x)
  
 snps_tfbs=tfbs('./Motifbreak/Tx_and_CREs/TFBSs_disrupted_10neg5/combined')
 lapply(snps_tfbs,function(x)x=x[,c('seqnames','start','end')] %>% unique() %>% nrow())
-## denisova 38730
-## neandertal 22080
-## png 240389
+## denisova 39954
+## neandertal 22756
+## png 310055
 
 ## SNPS that are eQTLs
 tfbs_eqtls=function(x){
@@ -110,14 +109,13 @@ snps_tfbs_eqtls=tfbs_eqtls(snps_tfbs)
 ## table tfbs snps that are cis-eQTLs
 table_tfbs_eqtls=lapply(snps_tfbs_eqtls,function(x)
   x=x[
-    ,c('seqnames','start','end','rs_id_dbSNP151','alt','gene_name','tissue','maf','qval')
+    ,c('seqnames','start','end','rs_id_dbSNP151','ALT','gene_name','tissue','maf','qval')
   ] %>% setnames(c('seqnames','start','end','rsid','risk_allele','gene_name','tissue','maf','qval'))%>% unique()
     )
-# lapply(table_tfbs_eqtls,function(x)x=x[,c(1:3)] %>% unique() %>% nrow())
-# xxx ambiguous
-# 32 denisova (0.082%)
-# 70 neandertal (0.32%)
-# 369 png (0.15%)
+lapply(table_tfbs_eqtls,function(x)x=x[,c(1:3)] %>% unique() %>% nrow())
+# 36 denisova (0.001%)
+# 75 neandertal (0.003%)
+# 542 png (0.0017%)
 
 
 ## write tfbs eqtls
@@ -133,7 +131,6 @@ original_files=function(x){
        ,freq_range:=ifelse(all_frequency<=0.05,'low','high') # adjusted  
       ]
     )
-  x=x[c(2:4)]
   pop_names=c('denisova','neandertal','png')
   names(x)=pop_names
   for (i in seq_along(x)){
@@ -143,7 +140,7 @@ original_files=function(x){
   return(x)
   
 }
-snps=original_files('./Grouped_filtered_snps/')
+snps=original_files('./Grouped_filtered_snps/new_set/')
 
 gtex_png_comparison=function(png,gtex){
   png=copy(png)
@@ -180,29 +177,33 @@ gtex_png_comparison=function(png,gtex){
 
 snps_eqtl_freq=gtex_png_comparison(snps,snps_tfbs_eqtls)
 
+adjust_pvalues=function(x){
+  df=copy(x)
+  pvals_df=copy(df)
+  pvals_df=pvals_df$p
+  pvals_df_adjusted=p.adjust(pvals_df,'fdr')%>%as.data.table() %>% setnames('p.adj')
+  pvals_df_adjusted=pvals_df_adjusted[
+    ,p.signif:= ifelse(`p.adj`<=0.0001,'****',
+                       ifelse(`p.adj`>0.0001 &`p.adj`<=0.001,'***',
+                              ifelse(`p.adj`>0.001 & `p.adj`<=0.01,'**',
+                                     ifelse(`p.adj`>0.01 & `p.adj`<=0.05,'*',' '))))
+    ]
+  df_final=cbind(df,pvals_df_adjusted)
+  return(df_final)
+}
+
 pvalues=copy(snps_eqtl_freq)
 pvalues=pvalues%>% split(as.factor(snps_eqtl_freq$pop)) %>% 
   lapply(function(x)x=x[
     ,p:=wilcox.test(snp_freq ~ frequency_type, data=x,paired=T)$p.val
     ][
       ,statistic:=wilcox.test(snp_freq ~ frequency_type, data=x,paired=T)$statistic
-    ][
-      ,p.adj:=p.adjust(p,'bonferroni')
-    ][
-      ,p.signif:= ifelse(`p.adj`<=0.0001,'****',
-                         ifelse(`p.adj`>0.0001 &`p.adj`<=0.001,'***',
-                                ifelse(`p.adj`>0.001 & `p.adj`<=0.01,'**',
-                                       ifelse(`p.adj`>0.01 & `p.adj`<=0.05,'*',' '))))
-      ][
-        ,c('pop','statistic','p','p.adj','p.signif')
-      ] %>% unique()) %>% rbindlist()
-
+    ]) %>% rbindlist() %>% adjust_pvalues()
+pvalues=pvalues[,c('pop','statistic','p','p.adj','p.signif')] %>% unique()
 ## p values
-## denisova    W=314   padj 1
-## neandertal  W=434   padj  3.165594e-04      ***
-## png         W=17140 padj 8.548505e-14     ****
-
-
+## denisova    W=472   padj 0.4
+## neandertal  W=715   padj  1.158345e-04     ***
+## png         W=34470 padj 6.070072e-27     ****
 
 eQTL_freq_plot=function(df){
   
@@ -243,7 +244,7 @@ eQTL_freq_plot=function(df){
   
 }
 
-pdf('/home/dvespasiani/tfbs_plots/tfbs_eqtls_freq.pdf',width = 7,height =7)
+pdf('/home/dvespasiani/Archaic_introgression_in_PNG/tfbs_plots/tfbs_eqtls_freq.pdf',width = 7,height =7)
 eQTL_freq_plot(snps_eqtl_freq)
 dev.off()
 

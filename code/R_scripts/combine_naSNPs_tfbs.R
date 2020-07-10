@@ -1,7 +1,6 @@
 ## combine naSNPs TFBSs
 library(dplyr); library(data.table); library(magrittr)
 
-
 setwd('/data/projects/punim0586/dvespasiani/Files/PNG')
 
 motifbreak_path='./Motifbreak/Tx_and_CREs'
@@ -45,6 +44,7 @@ read_nasnps=function(x){
 }
 
 nasnps_jaspar=read_nasnps('splitted/jaspar/')
+nasnps_hocomoco=read_nasnps('splitted/hocomoco/')
 
 
 check_output=function(x,y){
@@ -55,11 +55,13 @@ check_output=function(x,y){
 }
 
 
-check_output(test_na,input_snps[[3]])
+check_output(nasnps_jaspar,input_snps[[3]])
+check_output(nasnps_hocomoco,input_snps[[3]])
 
 
 dir=paste0(motifbreak_path,output_snps_dir,sep='')
 write.table(nasnps_jaspar,paste0(dir,'jaspar2018/png_jaspar2018_10neg5'),sep=' ',quote = F,row.names = F,col.names = T)
+write.table(nasnps_hocomoco,paste0(dir,'hocomoco/png_hocomocov11_10neg5'),sep=' ',quote = F,row.names = F,col.names = T)
 
 
 

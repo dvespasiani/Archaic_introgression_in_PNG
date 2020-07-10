@@ -5,9 +5,9 @@ library(ggthemes);library(ggplot2);library(ggpubr)
 library(openxlsx)
 
 setDTthreads(8)
-setwd('/data/projects/punim0586/dvespasiani/Files/PNG/Chromatin_states/')
+setwd('/data/projects/punim0586/dvespasiani/Files/Archaic_introgression_in_PNG/Chromatin_states/')
 
-plot_output_dir='/home/dvespasiani/ranked_enrichments/'
+plot_output_dir='~/Archaic_introgression_in_PNG/ranked_enrichments/'
 
 assign_names=function(x){
   pop_names=c('denisova','neandertal') 
@@ -78,14 +78,7 @@ t_test_cell_line=function(y){
         ,statistic:=t.test(Tcells$enrichment,Allcells$enrichment,alternative = 'g')$statistic	
         ][
           ,df:=t.test(Tcells$enrichment,Allcells$enrichment,alternative = 'g')$parameter
-          ][
-            ,p.adj:=p.adjust(p,method = 'bonferroni')
-            ][
-              ,p.signif:= ifelse(`p.adj`<=0.0001,'****',
-                                 ifelse(`p.adj`>0.0001 &`p.adj`<=0.001,'***',
-                                        ifelse(`p.adj`>0.001 & `p.adj`<=0.01,'**',
-                                               ifelse(`p.adj`>0.01 & `p.adj`<=0.05,'*',' '))))
-              ]
+          ]
   }
   
   z=copy(y)
@@ -98,15 +91,33 @@ simplified=function(x){
   z=Map(mutate,z,'pop'=names(z)) %>% rbindlist()
 }
 
-asnp_allfreq_enrichment_pval=lapply(asnp_allfreq_enrichment,function(x)t_test_cell_line(x))
+
+adjust_pvalues=function(x){
+  df=copy(x)
+  pvals_df=copy(df)
+  pvals_df=pvals_df$p
+  pvals_df_adjusted=p.adjust(pvals_df,'fdr')%>%as.data.table() %>% setnames('p.adj')
+  pvals_df_adjusted=pvals_df_adjusted[
+    ,p.signif:= ifelse(`p.adj`<=0.0001,'****',
+                       ifelse(`p.adj`>0.0001 &`p.adj`<=0.001,'***',
+                              ifelse(`p.adj`>0.001 & `p.adj`<=0.01,'**',
+                                     ifelse(`p.adj`>0.01 & `p.adj`<=0.05,'*',' '))))
+    ]
+  df_final=cbind(df,pvals_df_adjusted)
+  return(df_final)
+}
+
+
+
+asnp_allfreq_enrichment_pval=lapply(asnp_allfreq_enrichment,function(x)t_test_cell_line(x)%>% adjust_pvalues()) 
 asnp_allfreq_enrichment_pval=simplified(asnp_allfreq_enrichment_pval)
 
-asnp_highfreq_enrichment_pval=lapply(asnp_highfreq_enrichment,function(x)t_test_cell_line(x))
+asnp_highfreq_enrichment_pval=lapply(asnp_highfreq_enrichment,function(x)t_test_cell_line(x)%>% adjust_pvalues())
 asnp_highfreq_enrichment_pval=simplified(asnp_highfreq_enrichment_pval)
 
 pval=list(asnp_allfreq_enrichment_pval,asnp_highfreq_enrichment_pval)
 pval=lapply(pval,function(x)x=x[order(factor(x$chrom_state,levels=chrom_state_levels))])
-write.xlsx(pval,'/home/dvespasiani/pvalue_tables/Supp_Table_ranked_enrichment.xlsx')
+write.xlsx(pval,'~/Archaic_introgression_in_PNG/pvalue_tables/Supp_Table_ranked_enrichment.xlsx')
 
 
 ## plot enrichment as dot plots
@@ -209,7 +220,7 @@ cool_states=cool_states$chrom_state %>% unique()
 
 deni_relevant_states=copy(asnps_highfreq_cellenrich[[1]])[chrom_state%in%cool_states]
 
-pdf(paste0(plot_output_dir,'deni_highfreq_relevantstates_ranked_enrichment.pdf',sep=''),width=5,height = 10)
+pdf(paste0(plot_output_dir,'deni_highfreq_relevantstates_ranked_enrichment.pdf',sep=''),width=5,height = 15)
 ggplot(deni_relevant_states,aes(x=cell_line,y=mean,col=chrom_state))+
   geom_line(aes(group=1),color='black',size=0.3)+
   geom_errorbar(aes(ymin=mean-sd, ymax=mean+sd),position='dodge',width=0,size=1.2)+
@@ -218,7 +229,7 @@ ggplot(deni_relevant_states,aes(x=cell_line,y=mean,col=chrom_state))+
   dotcol+
   colScale+
   xlab('\n  \n')+ylab('\n Log2 aSNPs enrichment \n')+
-  facet_wrap(chrom_state~., ncol = 1)+
+  facet_wrap(chrom_state~., ncol = 1,scales = 'free_y')+
   theme(strip.text.y = element_blank(),
         strip.background = element_blank(),
         strip.background.y = element_blank(),

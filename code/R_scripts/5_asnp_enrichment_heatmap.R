@@ -75,7 +75,6 @@ enrichment_matrix=function(x){
 
 asnp_nofreq_matrix=enrichment_matrix(asnp_nofreq)
 asnp_highfreq_matrix=enrichment_matrix(asnp_freq)
-# asnp_lowfreq_matrix=enrichment_matrix(asnp_freq,'low')
 
 ## one sample t test for every cell ##
 stat_test=function(x){
@@ -87,20 +86,34 @@ stat_test=function(x){
     lapply(function(y)y %>% split(as.factor(y$chrom_state)) %>% 
              lapply(function(z) z %>%
                       mutate('test_stat' := t.test(z$enrichment,mu= 1,alternative = 'g')$statistic,
-                             'p_val':=t.test(z$enrichment,mu= 1,alternative = 'g')$p.value,
-                             'df' :=t.test(z$enrichment,mu= 1,alternative = 'g')$parameter,
-                             'p.adj':=p.adjust(p_val,method = 'bonferroni'),
-                             'p.signif'= ifelse(`p.adj`<=0.0001,'****',
-                                                ifelse(`p.adj`>0.0001 &`p.adj`<=0.001,'***',
-                                                       ifelse(`p.adj`>0.001 & `p.adj`<=0.01,'**',
-                                                              ifelse(`p.adj`>0.01 & `p.adj`<=0.05,'*',' '))))) %>% 
+                             'p':=t.test(z$enrichment,mu= 1,alternative = 'g')$p.value,
+                             'df' :=t.test(z$enrichment,mu= 1,alternative = 'g')$parameter)%>% 
                       as.data.table()
              ) %>% rbindlist()
     )%>% rbindlist()
 }
 
-asnp_nofreq_pvals=lapply(asnp_nofreq,function(x)stat_test(x)) %>% rbindlist()
-asnp_highfreq_pvals=lapply(asnp_freq,function(x)stat_test(x))%>% rbindlist()
+
+
+
+adjust_pvalues=function(x){
+  df=copy(x)
+  pvals_df=copy(df)
+  pvals_df=pvals_df$p
+  pvals_df_adjusted=p.adjust(pvals_df,'fdr')%>%as.data.table() %>% setnames('p.adj')
+  pvals_df_adjusted=pvals_df_adjusted[
+    ,p.signif:= ifelse(`p.adj`<=0.0001,'****',
+                       ifelse(`p.adj`>0.0001 &`p.adj`<=0.001,'***',
+                              ifelse(`p.adj`>0.001 & `p.adj`<=0.01,'**',
+                                     ifelse(`p.adj`>0.01 & `p.adj`<=0.05,'*',' '))))
+    ]
+  df_final=cbind(df,pvals_df_adjusted)
+  return(df_final)
+}
+
+
+asnp_nofreq_pvals=lapply(asnp_nofreq,function(x)stat_test(x) %>% adjust_pvalues()) %>% rbindlist()
+asnp_highfreq_pvals=lapply(asnp_freq,function(x)stat_test(x)%>% adjust_pvalues())%>% rbindlist()
 
 
 pval_vector=function(x){
@@ -142,7 +155,7 @@ enrich_pval_tables=function(x,y,table){
   }else{
     
     enrichment=list(file_1,file_2)
-    enrichment=lapply(enrichment,function(z)z=z[,c(1:4,7)] %>% unique())
+    enrichment=lapply(enrichment,function(z)z=z[,c(1:5,7,9)] %>% unique())
     
     file_names=c('all-frequencies','common-to-high') 
     names(enrichment)=file_names
@@ -155,10 +168,10 @@ enrich_pval_tables=function(x,y,table){
 
 
 enrichment_table=enrich_pval_tables(asnp_nofreq_pvals,asnp_highfreq_pvals,'enrichment')
-write.xlsx(enrichment_table,'~/Desktop/Paper_1/pvalue_tables/Supplementary_tables/Supp_Table_2_heatmap_enrichment.xlsx')
+write.xlsx(enrichment_table,'~/Desktop/Paper_1/Tables/pvalue_tables//Supp_Table_2_heatmap_enrichment.xlsx')
 
 pval_table=enrich_pval_tables(asnp_nofreq_pvals,asnp_highfreq_pvals,'pval')
-write.xlsx(pval_table,'~/Desktop/Paper_1/pvalue_tables/Supplementary_tables/Supp_Table_3_heatmap_pvalues.xlsx')
+write.xlsx(pval_table,'~/Desktop/Paper_1/Tables/pvalue_tables//Supp_Table_3_heatmap_pvalues.xlsx')
 
 
 ## color legends for heatmap

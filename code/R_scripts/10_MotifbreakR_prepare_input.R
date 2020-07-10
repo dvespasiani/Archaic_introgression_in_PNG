@@ -7,7 +7,7 @@ library(BSgenome.Hsapiens.UCSC.hg19)
 
 options(scipen=999)
 
-setwd('/data/projects/punim0586/dvespasiani/Files/PNG/')
+setwd('/data/projects/punim0586/dvespasiani/Files/Archaic_introgression_in_PNG/')
 snps_output='./Motifbreak/Tx_and_CREs/snps_motifbreakr_format/non_splitted/'
 
 tx_cres_states=c('1_TssA','2_TssAFlnk','3_TxFlnk',"4_Tx","5_TxWk",'6_EnhG','7_Enh')
@@ -27,7 +27,7 @@ read_cres=function(x){
   return(df)
   }
 
-snps_cres=read_cres('./0Chromatin_states/SNPs_chromHMM_annotated/new_set/')
+snps_cres=read_cres('./Chromatin_states/SNPs_chromHMM_annotated/new_set/')
 
 # create motifbreakR format which is chr:start:REF:ALT
 # remember to substract one bp from start because otherwise it understands un cazzo 

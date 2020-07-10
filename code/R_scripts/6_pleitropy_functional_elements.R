@@ -27,7 +27,7 @@ read_states=function(x){
 }
 
 
-snps_chrom_states=read_states('./PNG/Chromatin_states/SNPs_chromHMM_annotated/new_set/')
+snps_chrom_states=read_states('./Archaic_introgression_in_PNG/Chromatin_states/SNPs_chromHMM_annotated/new_set/')
 
 chrom_state_levels=copy(snps_chrom_states[[1]])[,chrom_state] %>% unique() %>% stringr::str_sort( numeric = TRUE)
 
@@ -117,82 +117,8 @@ pvalues_highfreq=pvalues(snps_highfreq_pleiotropy)
 pval=list(pvalues_allfreq,pvalues_highfreq)
 pval=lapply(pval,function(x)x=x[order(factor(x$chrom_state,levels=chrom_state_levels))])
 
-write.xlsx(pval,'/home/dvespasiani/pvalue_tables/Supp_Table_4_pleiotropy_pvalues.xlsx')
+write.xlsx(pval,'~/Archaic_introgression_in_PNG/pvalue_tables/Supp_Table_4_pleiotropy_pvalues.xlsx')
 
-# 
-# prepare_data=function(x,y){
-#   df=copy(x) %>% rbindlist()
-#   df=df[
-#     ,c('chrom_state','pop','median','lowq','upq')
-#     ][
-#       ,chrom_state:=factor(chrom_state,levels = chrom_state_levels)
-#       ]  %>% unique()
-#   signif=copy(y)
-#   signif=signif[,c('chrom_state','pop','p.signif')]
-#   df_final=full_join(df,signif,by=c('pop','chrom_state')) %>% as.data.table()
-#   df_final=df_final[,p.signif:=ifelse(is.na(p.signif),' ',p.signif)]
-# }
-# 
-# snps_pleiotropy_allfreq=prepare_data(snps_all_freq_pleiotropy,pvalues_allfreq)
-# snps_pleiotropy_highfreq=prepare_data(snps_highfreq_pleiotropy,pvalues_highfreq)
-# 
-# pleiotropy_plot=function(df){
-#   
-#   x=copy(df)
-#   x=x[,chrom_state:=gsub(".*_","",chrom_state)]
-#   
-#   x$chrom_state=factor(x$chrom_state,levels = c('TssA','TssAFlnk','TxFlnk','Tx','TxWk','EnhG','Enh', 'ZNF/Rpts',
-#                                                 'Het','TssBiv','BivFlnk','EnhBiv','ReprPC','ReprPCWk','Quies'))
-# 
-#   my_palette_pop=c('#C99E10', # denisova
-#                    '#9B4F0F', #neandertal
-#                    '#1E656D' #png
-#                    )
-#   
-#   names(my_palette_pop)= levels(as.factor(x$pop))
-#   dotcol=scale_fill_manual(name= " ",values = my_palette_pop,labels = c('Denisova','Neanderthal','PNG'))
-#   barcol=scale_color_manual(name= " ",values = my_palette_pop,labels = c('Denisova','Neanderthal','PNG'))
-#   
-#   plot=ggplot(x,aes(x=pop,y=median,fill=pop))+
-#    geom_errorbar(aes(ymin=lowq, ymax=upq,col=pop),position='dodge',width=0,size=1.2)+
-#     geom_point(size=3)+
-#     geom_point(shape = 21,colour = "black",stroke = 0.25,size=3.97)+
-#     dotcol+barcol+
-#    xlab(' ')+ylab('\n Element pleiotropy \n ')+
-#     geom_text(aes(x=pop, y=15.5, label=p.signif), col='black', size=3)+
-#    facet_wrap(chrom_state~., ncol = 3)+
-#     theme(strip.text.x = element_text(),
-#           strip.text.y = element_text(hjust = 0.5),
-#           strip.background = element_rect(color = 'black', linetype = 'solid'),
-#           strip.background.y = element_blank(),
-#           strip.background.x =element_blank(),
-#          panel.background =element_rect(fill = 'white', size = 0.25,colour = 'black'),
-#           panel.grid.minor = element_blank(),
-#           panel.grid.major = element_blank(),
-#           legend.text = element_text(),
-#           legend.title = element_text(),
-#           legend.position = 'bottom',
-#           axis.text.x = element_blank(),
-#           axis.ticks.x = element_blank(),
-#           axis.text.y = element_text(),
-#           axis.title.y = element_text(hjust=0.5),
-#           axis.text=element_text(),
-#           axis.line = element_blank())
-#   return(plot)
-#   
-# }
-# 
-# pdf('/home/dvespasiani/pleiotropy/pleiotropy_allfreq_plot.pdf',width = 5,height = 7)
-# pleiotropy_plot(snps_pleiotropy_allfreq)
-# dev.off()
-# 
-# pdf('/home/dvespasiani/pleiotropy/pleiotropy_highfreq_plot.pdf',width = 5,height = 7)
-# pleiotropy_plot(snps_pleiotropy_highfreq)
-# dev.off()
-
-
-
-#### irenes preferred version
 
 second_pleiotropy=function(x,freq){
   
@@ -274,9 +200,7 @@ second_pleiotropy_plot=function(df){
             legend.text = element_text(),
             legend.title = element_text(),
             legend.position = 'bottom',
-            # axis.text.x = element_blank(),
-            # axis.ticks.x = element_blank(),
-            axis.text.y = element_text(),
+           axis.text.y = element_text(),
             axis.title.y = element_text(hjust=0.5),
             axis.text=element_text(),
             axis.line = element_blank())
@@ -284,10 +208,10 @@ second_pleiotropy_plot=function(df){
 
   }
 
-pdf('/home/dvespasiani/pleiotropy/pleiotropy_allfreq_plot.pdf',width = 7,height = 7)
+pdf('~/Archaic_introgression_in_PNG/pleiotropy/pleiotropy_allfreq_plot.pdf',width = 7,height = 7)
 second_pleiotropy_plot(second_snps_all_freq_pleiotropy)
 dev.off()
 
-pdf('/home/dvespasiani/pleiotropy/pleiotropy_highfreq_plot.pdf',width = 7,height = 7)
+pdf('~/Archaic_introgression_in_PNG/pleiotropy/pleiotropy_highfreq_plot.pdf',width = 7,height = 7)
 second_pleiotropy_plot(second_snps_high_freq_pleiotropy)
 dev.off()

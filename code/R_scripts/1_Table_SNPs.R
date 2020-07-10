@@ -11,7 +11,7 @@ outputdir='./Grouped_filtered_snps/'
 
 vep_output_dir= './VEP/input/'
   
-setwd('/data/projects/punim0586/dvespasiani/Files/PNG/')
+setwd('/data/projects/punim0586/dvespasiani/Files/Archaic_introgression_in_PNG/')
 
 read_files=function(x){
   x=as.character(list.files(x,recursive =F,full.names = T)) %>% 
@@ -44,9 +44,21 @@ read_files=function(x){
 
 population_files=read_files('./Original_files') 
 
+asnps_no_anc_info=lapply(population_files,function(x)x=x[ANC=='-1' & ancestry=='archaic' ])
+asnps_with_anc_info=lapply(population_files,function(x)x=x[ANC!='-1' & ancestry=='archaic' ])
+
+asnps_no_anc_info_common=asnps_no_anc_info[[1]][asnps_no_anc_info[[2]],on=c("CHR",'FROM','TO'),nomatch=0]
+asnps_with_anc_info_common=asnps_with_anc_info[[1]][asnps_with_anc_info[[2]],on=c("CHR",'FROM','TO'),nomatch=0]
+  
 number_snps=function(x){df=copy(x)[,c(1:3)] %>%unique() %>%  nrow()}
 
-tot_snps_between_haplotypes=copy(population_files) %>% rbindlist() %>% number_snps() # 8192985
+tot_asnps_no_anc_info=lapply(asnps_no_anc_info,function(x)number_snps(x))
+tot_asnps_anc_info=lapply(asnps_with_anc_info,function(x)number_snps(x))
+
+tot_asnps_no_anc_info_common=number_snps(asnps_no_anc_info_common)
+tot_asnps_anc_info_common=number_snps(asnps_with_anc_info_common)
+
+tot_snps_between_haplotypes=copy(population_files) %>% rbindlist() %>% number_snps() # 8337067
 tot_snps_per_file_per_haplotypes=lapply(population_files,function(x) x=x %>% split(as.factor(x$ancestry)) %>% lapply(function(y) y%>% number_snps())) 
 
 ## separate aSNPs from naSNPs and remove singletons 
@@ -184,8 +196,8 @@ assign_names=function(x){
 
 png_snps_list=assign_names(png_snps_list)
 
-# filenames=paste0(outputdir,names(png_snps_list),sep='')
-# mapply(write.table,png_snps_list, file = filenames,col.names = T, row.names = F, sep = " ", quote = F)
+filenames=paste0(outputdir,names(png_snps_list),sep='')
+mapply(write.table,png_snps_list, file = filenames,col.names = T, row.names = F, sep = " ", quote = F)
 
 ## output files for VEP annotation
 vep_input_format=copy(png_snps_list) %>% lapply(function(x)x[,c('CHR','FROM','REF','ALT')][
@@ -202,7 +214,7 @@ vep_input_format=copy(png_snps_list) %>% lapply(function(x)x[,c('CHR','FROM','RE
 vep_filenames=paste0(vep_output_dir,names(vep_input_format),sep='')
 vep_filenames=paste0(vep_filenames,'.txt',sep='')
 
-# mapply(write.table,vep_input_format, file = vep_filenames,col.names = T, row.names = F, sep = "\t", quote = F)
+mapply(write.table,vep_input_format, file = vep_filenames,col.names = T, row.names = F, sep = "\t", quote = F)
 
 
 ## plot sfs

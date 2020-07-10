@@ -7,14 +7,13 @@ library(ggExtra)
 
 setDTthreads(10)
 
-setwd('/data/projects/punim0586/dvespasiani/Files/PNG/')
+setwd('/data/projects/punim0586/dvespasiani/Files/Archaic_introgression_in_PNG/')
 
 read_vep=function(x){
   x=as.character(list.files(x,recursive = F,full.names = T)) %>% 
     lapply(function(y)
       y=fread(y,header = T,sep=' ')[,freq_range:=ifelse(all_frequency<0.05,'low','high')] 
     )
-  # x=x[c(2:4)]
   pop_names=c('denisova','neandertal','png')
   names(x)=pop_names
   for (i in seq_along(x)){
@@ -90,7 +89,20 @@ propsnps_genomicelement_freqbin=function(x){
 
 
 snp_genomelemnt_perfreq=propsnps_genomicelement_freqbin(ooa_snps_genomicelement)
-
+## add mock lines 
+mock_deni=data.table(numb_snps_perfreqbin=c(0,0),
+                     log10numbsnps_perfreqbin=c(0,0),
+                     prop_genomicelement_freqbin=c(0,0),
+                     all_frequency=c(0.9,1.0),
+                     genomic_element=c('Intron','Intron'),
+                     pop='Denisova')
+mock_nean=data.table(numb_snps_perfreqbin=0,
+                     log10numbsnps_perfreqbin=0,
+                     prop_genomicelement_freqbin=0,
+                     all_frequency=1.0,
+                     genomic_element='Intron',
+                     pop='Neandertal')
+snp_genomelemnt_perfreq=rbind(snp_genomelemnt_perfreq,mock_nean,mock_deni)
 
 vep_barplot=function(x,ancestry){
   
@@ -129,15 +141,15 @@ vep_barplot=function(x,ancestry){
 }
 
 
-pdf('/home/dvespasiani/vep_plot/Denisova_vep_barplot.pdf',width = 7,height =7)
+pdf('~/Archaic_introgression_in_PNG/vep_plot/Denisova_vep_barplot.pdf',width = 7,height =7)
 vep_barplot(snp_genomelemnt_perfreq,'Denisova')
 dev.off()
 
-pdf('/home/dvespasiani/vep_plot/Neandertal_vep_barplot.pdf',width = 7,height =7)
+pdf('~/Archaic_introgression_in_PNG/vep_plot/Neandertal_vep_barplot.pdf',width = 7,height =7)
 vep_barplot(snp_genomelemnt_perfreq,'Neandertal')
 dev.off()
 
-pdf('/home/dvespasiani/vep_plot/PNG_vep_barplot.pdf',width = 7,height =7)
+pdf('~/Archaic_introgression_in_PNG/vep_plot/PNG_vep_barplot.pdf',width = 7,height =7)
 vep_barplot(snp_genomelemnt_perfreq,'Papuans')
 dev.off()
 
@@ -165,15 +177,15 @@ log10_numbsnps_plot=function(file,ancestry,pop_color){
   
 }
 
-pdf('/home/dvespasiani/vep_plot/denisova_log10_numbsnps.pdf',width = 7,height =2)
+pdf('~/Archaic_introgression_in_PNG/vep_plot/denisova_log10_numbsnps.pdf',width = 7,height =2)
 log10_numbsnps_plot(snp_genomelemnt_perfreq,'Denisova','#C99E10')
 dev.off()
 
-pdf('/home/dvespasiani/vep_plot/neandertal_log10_numbsnps.pdf',width = 7,height =2)
+pdf('~/Archaic_introgression_in_PNG/vep_plot/neandertal_log10_numbsnps.pdf',width = 7,height =2)
 log10_numbsnps_plot(snp_genomelemnt_perfreq,'Neandertal','#9B4F0F')
 dev.off()
 
-pdf('/home/dvespasiani/vep_plot/png_log10_numbsnps.pdf',width = 7,height =2)
+pdf('~/Archaic_introgression_in_PNG/vep_plot/png_log10_numbsnps.pdf',width = 7,height =2)
 log10_numbsnps_plot(snp_genomelemnt_perfreq,'Papuans','#1E656D')
 dev.off()
 
@@ -194,7 +206,7 @@ neandertal_exons=exons(ooa_snps_genomicelement[[2]])
 png_exons=exons(ooa_snps_genomicelement[[3]])
 
 
-test_exons=function(archaic,nonarchaic){
+test_exons=function(archaic,nonarchaic,fraction_asnps_nasnp){
   x=copy(archaic)
   x=x[,c(1:5):=NULL][,fakecolumn:='fake'] %>% unique()
   y=copy(nonarchaic)
@@ -205,13 +217,13 @@ test_exons=function(archaic,nonarchaic){
     ,totsnps_exons:=numbsnps.x+numbsnps.y
   ]
   
-  z=binom.test(x=c(z$numbsnps.x,z$numbsnps.y),p=0.5,alternative = 'l')
+  z=binom.test(x=c(z$numbsnps.x,z$numbsnps.y),p=fraction_asnps_nasnp,alternative = 'l')
   return(z)
 }
 
 
-test_exons(denisova_exons,png_exons)
-test_exons(neandertal_exons,png_exons)
+test_exons(denisova_exons,png_exons,143581/1112811)
+test_exons(neandertal_exons,png_exons,85298/1112811)
 
 # neandertal_exons=exons(ooa_snps_genomicelement[[2]])
 # png_exons=exons(ooa_snps_genomicelement[[3]])

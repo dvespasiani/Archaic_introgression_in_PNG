@@ -1,7 +1,6 @@
 ## QCs output motifbreak + table SNPs
 library(dplyr); library(data.table); library(magrittr)
 
-
 setwd('/data/projects/punim0586/dvespasiani/Files/PNG')
 
 motifbreak_path='./Motifbreak/Tx_and_CREs'
@@ -49,6 +48,7 @@ states=read_active_states('./Chromatin_states/SNPs_chromHMM_annotated/new_set')
 ## check again the input snps are the ones you wanted
 snps_instates=lapply(states, function(x)x=x[,c("seqnames", "start",'end','ref','alt')] %>% unique())
 purrr::map2(input_snps,snps_instates,setdiff) %>% rbindlist() %>% nrow()
+purrr::map2(snps_instates,input_snps,setdiff) %>% rbindlist() %>% nrow()
 
 ## read tfbs snps
 read_tfbs_snps=function(x){
@@ -58,7 +58,10 @@ read_tfbs_snps=function(x){
   df=as.character(list.files(file,recursive = F,full.names = T)) %>% 
     lapply(function(x)x=fread(x,sep=' ',header = T)[
       ,end:=start+1
-      ]%>% setorderv(c('seqnames','start','end')) %>% dplyr::select(c('seqnames','start','end','REF','ALT',everything())) %>% 
+      ][
+       !dataSource %in%'HOCOMOCOv11-secondary-D'
+      ]%>% setorderv(c('seqnames','start','end')) %>% 
+        dplyr::select(c('seqnames','start','end','REF','ALT',everything())) %>% 
         as.data.table())
   
   pop_names=c('denisova','neandertal','png')
@@ -72,6 +75,8 @@ read_tfbs_snps=function(x){
 jaspar_tfbs=read_tfbs_snps('jaspar2018/')
 hocomoco_tfbs=read_tfbs_snps('hocomoco/')
 
+lapply(jaspar_tfbs,function(x)x=x[,c(1:3)] %>% unique() %>% nrow())
+lapply(hocomoco_tfbs,function(x)x=x[,c(1:3)] %>% unique() %>% nrow())
 
 check_output_match_input=function(x,y,z){
   x=copy(x) %>% lapply(function(a)a=a[,c("seqnames", "start",'end')] %>% unique())
@@ -92,10 +97,9 @@ check_output_match_input=function(x,y,z){
 
 check_output_match_input(jaspar_tfbs,states,hocomoco_tfbs)
 
-
 ### make table SNPs
 ## remove duplicates (i.e. SNPs that disrupt motif of same TF)
-combined=purrr::map2(jaspar_tfbs[c(1:2)],hocomoco_tfbs[c(1:2)],rbind) %>% 
+combined=purrr::map2(jaspar_tfbs,hocomoco_tfbs,rbind) %>% 
   lapply(function(x)x=x[,c('seqnames','start','end','REF','ALT','strand','geneSymbol','providerName','dataSource','alleleDiff','effect')] %>% 
            unique())
 
@@ -112,8 +116,8 @@ number_snps=function(x){
 
 number_input=number_snps(input_snps)
 
-number_hoco_output=number_snps(hocomoco_tfbs)
 number_jasp_output=number_snps(jaspar_tfbs)
+number_hoco_output=number_snps(hocomoco_tfbs)
 number_combined_output=number_snps(combined)
 
 
@@ -149,8 +153,8 @@ jaspar_cluster=tf_cluster(jaspar_tfbs)
 hocomoco_cluster=tf_cluster(hocomoco_tfbs)
 combined_cluster=tf_cluster(combined)
 
-number_hoco_cluster=number_snps(hocomoco_cluster)
 number_jasp_cluster=number_snps(jaspar_cluster)
+number_hoco_cluster=number_snps(hocomoco_cluster)
 number_combined_cluster=number_snps(combined_cluster)
 
 

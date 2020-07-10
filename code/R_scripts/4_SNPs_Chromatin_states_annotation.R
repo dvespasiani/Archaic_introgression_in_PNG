@@ -8,8 +8,8 @@ setDTthreads(10)
 ### load cells 
 setwd('/data/projects/punim0586/dvespasiani/Files/')
 
-output_dir='./PNG/Chromatin_states/SNPs_chromHMM_annotated/new_set/'
-simplified_dir='./PNG/Chromatin_states/simplified_set/new_set/'
+output_dir='./Archaic_introgression_in_PNG/Chromatin_states/SNPs_chromHMM_annotated/new_set/'
+simplified_dir='./Archaic_introgression_in_PNG/Chromatin_states/simplified_set/new_set/'
 
 
 read_cells=function(x){
@@ -32,7 +32,7 @@ read_cells=function(x){
   
 }
 
-cells=read_cells('./Roadmap_data/ChromHMM_15states_cell_lines_combined/Continuous_states')
+cells=read_cells('./Annotation_and_other_files/Roadmap_data/ChromHMM_15states_cell_lines_combined/Continuous_states')
 
 read_snps=function(x){
   pop=as.character(list.files(x,recursive = F,full.names = T)) %>% 
@@ -51,7 +51,7 @@ read_snps=function(x){
   return(pop)
 }
 
-snps=read_snps('./PNG/OoA_snps')
+snps=read_snps('./Archaic_introgression_in_PNG/OoA_snps')
 
 ### merge snps with chromatin states ###
 lapply(snps,function(x)setkey(x, seqnames, start, end))
@@ -143,8 +143,8 @@ for (i in seq_along(snps_chromatin_states)){
   assign(pop_names[i],snps_chromatin_states[[i]],.GlobalEnv)}
 
 
-# filenames_chromhmm=paste0(output_dir,names(snps_chromatin_states),sep='')
-# mapply(write.table,snps_chromatin_states, file = filenames_chromhmm,col.names = T, row.names = F, sep = " ", quote = F)
+filenames_chromhmm=paste0(output_dir,names(snps_chromatin_states),sep='')
+mapply(write.table,snps_chromatin_states, file = filenames_chromhmm,col.names = T, row.names = F, sep = " ", quote = F)
 
 
 ## count number snps per chromatin state 
@@ -225,11 +225,7 @@ ratio_plot=function(x){
       ,c('chrom_state','col')
       ] %>% unique()
   
-  # chromHMM_colors=nihroadmap_colors$col
-  # names(chromHMM_colors)=nihroadmap_colors$chrom_state
 
-  
-  
   my_palette_pop=c(#'#8D230F', #ambiguous
     '#C99E10', # denisova
     '#9B4F0F' #neandertal
@@ -274,7 +270,7 @@ ratio_plot=function(x){
 }
 
 ##
-pdf('/home/dvespasiani/asnps_nasnps_ratio/asnps_nasnps_ratio.pdf',width=7,height =10)
+pdf('~/Archaic_introgression_in_PNG/asnps_nasnps_ratio/asnps_nasnps_ratio.pdf',width=7,height =10)
 ratio_plot(snps_nofreqsplit)
 dev.off()
 
@@ -341,27 +337,14 @@ log10_numbsnps_plot=function(df){
   
 }
 
-pdf('/home/dvespasiani/asnps_nasnps_ratio/denisova_log10_numbsnps_chromstates.pdf',width = 7,height =2)
+pdf('~/Archaic_introgression_in_PNG/asnps_nasnps_ratio/denisova_log10_numbsnps_chromstates.pdf',width = 7,height =2)
 log10_numbsnps_plot(numb_snps_chromstates[[1]])
 dev.off()
 
-pdf('/home/dvespasiani/asnps_nasnps_ratio/neandertal_log10_numbsnps_chromstates.pdf',width = 7,height =2)
+pdf('~/Archaic_introgression_in_PNG/asnps_nasnps_ratio/neandertal_log10_numbsnps_chromstates.pdf',width = 7,height =2)
 log10_numbsnps_plot(numb_snps_chromstates[[2]])
 dev.off()
 
-
-
-
-
-
-# simplify=function(x){
-#   df=copy(x)
-#   df=lapply(df,function(x)x=x[,c(1:6)]) 
-#   return(df)
-# }
-# 
-# snps_nofreqsplit_simplified=simplify(snps_nofreqsplit)
-# snps_freqsplit_simplified=simplify(snps_freqsplit)
 
 filenames_allfreq=paste0(paste0(simplified_dir,'all_freq/',sep=''),names(snps_nofreqsplit),sep='')
 mapply(write.table,snps_nofreqsplit, file = filenames_allfreq,col.names = T, row.names = F, sep = " ", quote = F)

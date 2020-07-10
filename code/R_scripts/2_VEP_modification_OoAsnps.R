@@ -3,29 +3,24 @@ library(tidyr);library(data.table);library(magrittr);library(dplyr);
 library(R.utils)
 
 setDTthreads(8)
-setwd('/data/projects/punim0586/dvespasiani/Files/PNG/')
+setwd('/data/projects/punim0586/dvespasiani/Files/Archaic_introgression_in_PNG/')
 
 output_dir='./OoA_snps/'
 
-read_asnps_files=function(x){
-  asnps=as.character(list.files(x,recursive = F,full.names = T))
-  asnps=asnps[c(2,3)] %>%# dont consider ambiguous and separately treat naSNPs because you have already modified the df in another script
+read_files=function(x){
+  snps=as.character(list.files(x,recursive = F,full.names = T)) %>% 
     lapply(function(y)y=fread(y,sep='\t',header = T))
-  asnps=lapply(asnps,function(y)y=y[
+  snps=lapply(snps,function(y)y=y[
     ,c('seqnames','start','allele'):= tstrsplit(`#Uploaded_variation` , "_", fixed=TRUE)
     ][
       ,c('ref','alt'):= tstrsplit(`allele` , "/", fixed=TRUE)
       ][
-        ,c('genomic_element','Consequence') :=tstrsplit(`Consequence` , ",", fixed=TRUE)
+        ,genomic_element:=gsub("\\.,*","",Consequence)
         ][
           ,c('allele','Allele','Consequence','Location','#Uploaded_variation'):=NULL
-          ][
-            ,start := as.numeric(start)
-            ][
-              ,end:= as.numeric(start)+1
-              ] %>% unique())
-  
-  return(asnps)
+          ])
+  snps=lapply(snps,function(x)x=x[,start:=as.numeric(start)][,end:=start+1])
+  return(snps)
 }
 
 assign_names=function(x){
@@ -36,11 +31,8 @@ assign_names=function(x){
   return(x)
 }
 
-vep_output=read_asnps_files('./VEP/output/')
-nasnps_vep=fread('./VEP/output/non_archaics_png.txt.gz',sep=' ',header=T)
-
-vep_output=list(vep_output[[1]],vep_output[[2]],nasnps_vep) %>% assign_names()
-
+vep_output=read_files('./VEP/output/')
+vep_output=assign_names(vep_output)
 ## add snp frequencies from original files 
 read_original_snps=function(x){
   x=as.character(list.files(x,recursive = F,full.names = T)) %>% 
@@ -49,14 +41,11 @@ read_original_snps=function(x){
         ,freq_range:= ifelse(`all_frequency`<0.05,'low','high')
         ]
     )
-  x=x[c(2:4)]
 }
-original_snps=read_original_snps('./Grouped_filtered_snps')
+original_snps=read_original_snps('./Grouped_filtered_snps/new_set/')
 
 combined_files=purrr::map2(vep_output,original_snps,inner_join,by=c('seqnames'='CHR','start'='FROM','end'='TO','ref'='REF','alt'='ALT')) 
 combined_files=Map(mutate,combined_files,'pop'=names(combined_files)) %>% lapply(function(x)setDT(x))
-#numb snp ambig=91785;deni=475422;nean=310680;png=4407553
-
 
 out_of_africa_snps=function(x){
   df=copy(x)
@@ -69,8 +58,8 @@ out_of_africa_snps=function(x){
   return(df)
 }
 
-ooasnps=out_of_africa_snps(combined_files)## % snps removed is between 20% ambig; 30% deni; 37% nean; 25% png 
-# lapply(ooasnps,function(y)y=y[,c('seqnames','start','end')]%>%unique()%>%nrow())
+ooasnps=out_of_africa_snps(combined_files)
+# lapply(ooasnps,function(y)y=y[,c('seqnames','start','end','AF')]%>%unique()%>%nrow())
 
 filenames=paste0(output_dir,names(ooasnps),sep='')
 mapply(write.table,ooasnps, file = filenames,col.names = T, row.names = F, sep = " ", quote = F)

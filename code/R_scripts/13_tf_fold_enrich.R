@@ -30,7 +30,29 @@ read_tfbs_snps=function(x){
 }
 
 
-combined=read_tfbs_snps(paste(motif_input_dir,'jaspar2018/',sep=''))
+combined=read_tfbs_snps(paste(motif_input_dir,'combined/',sep=''))
+lapply(combined,function(x)x[,c('seqnames','start','end')] %>% unique() %>% nrow())
+
+## remove low freq variants and see
+read_active_states=function(x){
+  x=as.character(list.files(x,recursive = F,full.names = T)) %>%
+    lapply(function(y)
+      fread(y,sep=' ',header = T,select=c('seqnames','start','end','ref','alt','chrom_state','cell_type','cell_line','all_freq'))[
+        chrom_state%in%c('1_TssA','2_TssAFlnk','3_TxFlnk','4_Tx','5_TxWk',"6_EnhG","7_Enh")
+        ][
+          ,chrom_state:=NULL
+          ] %>% unique()
+    )
+}
+
+states=read_active_states('./Chromatin_states/SNPs_chromHMM_annotated/new_set') 
+
+## check again the input snps are the ones you wanted
+combined=purrr::map2(combined,states,inner_join,by=c('seqnames','start','end','REF'='ref','ALT'='alt')) %>% 
+  lapply(function(x)x=as.data.table(x)[
+    ,c('cell_type','cell_line'):=NULL
+  ])
+combined=lapply(combined,function(x)x=x[,all_freq:=round(all_freq,2)][all_freq>=0.05][,all_freq:=NULL] %>% unique())
 lapply(combined,function(x)x[,c('seqnames','start','end')] %>% unique() %>% nrow())
 
 ## motif clusters
@@ -62,96 +84,9 @@ tf_cluster=function(x){
 combined_cluster=tf_cluster(combined)
 lapply(combined_cluster,function(x)x[,c('seqnames','start','end')] %>% unique() %>% nrow())
 
-
-# ### add frequency filtering step
-# read_active_states=function(x){
-#   x=as.character(list.files(x,recursive = F,full.names = T)) %>%
-#     lapply(function(y)
-#       fread(y,sep=' ',header = T,select=c('seqnames','start','end','chrom_state','cell_type','cell_line','all_freq'))[
-#         chrom_state%in%c('1_TssA','2_TssAFlnk','3_TxFlnk','4_Tx','5_TxWk',"6_EnhG","7_Enh")
-#         ][
-#           ,chrom_state:=NULL
-#           ] %>% unique()
-#     )
-# }
-# 
-# states=read_active_states('./Chromatin_states/SNPs_chromHMM_annotated/new_set') # remove the temp directory once the old script is optimized
-# 
-# commontohigh_combined_tfbs=purrr::map2(combined_tfbs,states,inner_join,by=merging_keys) %>% lapply(function(x)x=as.data.table(x)[all_freq>=0.05])
-# lapply(commontohigh_combined_tfbs,function(x)x[,c('seqnames','start','end')] %>% unique() %>% nrow())
-
-
-## count number SNPs per pop per tf
-# snp_matrix=function(x,pop){
-#   motif_id=copy(motif)[,c('Name','Cluster')] %>% unique()
-#   
-#   snp_count=function(x){
-#     df=copy(x)
-#     
-#     df=lapply(df,function(x)x=x[,c('seqnames','start','end','Cluster')] %>% unique())
-#     df=lapply(df,function(y)y=unique(y)[,numbsnps:=.N,by=.(Cluster)][,totsnps:=.N][,c('Cluster','numbsnps','totsnps')] %>% unique())
-#     df=Map(mutate,df,'pop'=names(df))
-#     
-#     df_final=full_join(df[[1]],df[[2]],by='Cluster') %>%as.data.table() %>% na.omit()
-#     
-#     df_final=df_final[,tot_asnps_tf:=numbsnps.x
-#                       ][
-#                         ,tot_nasnps_tf:=numbsnps.y
-#                         ][
-#                           ,tot_asnps:=totsnps.x
-#                           ][
-#                             ,tot_nasnps:=totsnps.y
-#                             ][
-#                               ,tot_snps_tf:=numbsnps.x+numbsnps.y
-#                               ][
-#                                 ,totsnps:=sum(numbsnps.x)+sum(numbsnps.y)
-#                                 ][
-#                                   ,log2_fold_enrichment:=round(log2(((tot_asnps_tf/tot_asnps)/(tot_nasnps_tf/tot_nasnps))),2)
-#                                   ][
-#                                     ,c('Cluster','log2_fold_enrichment','tot_asnps_tf','tot_asnps','tot_nasnps','tot_nasnps_tf','tot_snps_tf')
-#                                     ]%>% unique()
-#     
-#     df_final=df_final[
-#       ,pval:=phyper(tot_asnps_tf-1,tot_asnps,tot_nasnps,tot_snps_tf,lower.tail = F) # this calculates the p value of having a >= numb aSNPs targeting a tf given a total number of aSNPs, naSNPs
-#       ][
-#         ,adj_p:=p.adjust(pval, method="fdr")
-#         ][
-#           ,log10_p_adjust:=-log10(adj_p)
-#           ][
-#             ,significant_score:=ifelse(`adj_p`<=0.0001,'****',
-#                                        ifelse(`adj_p`>0.0001 &`adj_p`<=0.001,'***',
-#                                               ifelse(`adj_p`>0.001 & `adj_p`<=0.01,'**',
-#                                                      ifelse(`adj_p`>0.01 & `adj_p`<=0.05,'*',' '))))
-#             ][
-#               ,log10_tot_asnps_tf:=log10(tot_asnps_tf)
-#               ][
-#                 ,c('Cluster','log2_fold_enrichment','pval','adj_p','significant_score','log10_p_adjust','log10_tot_asnps_tf')
-#                 ]%>% setorderv('log10_p_adjust',-1)
-#     
-#     
-#     df_final=inner_join(df_final,motif_id,by='Cluster') %>% as.data.table()
-#     
-#     
-#   }
-#   
-#   if(pop=='deni'){
-#     y=copy(x)
-#     y=y[c(1,3)]
-#     y=snp_count(y)
-#     return(y)
-#   }else{
-#     z=copy(x)
-#     z=z[c(2,3)]
-#     z=snp_count(z)
-#     return(z)
-#   }
-#   
-# }
-# 
-# denisova_matrix=snp_matrix(combined_cluster,'deni')
-# neandertal_matrix=snp_matrix(combined_cluster,'nean')
-
-
+##-------------------------------------------------------------
+##    Calculate log2 fold enrichment + fisher exact p vals
+##-------------------------------------------------------------
 enrichment_pvalues=function(a){
   pvals=copy(a)
   pvals=apply(pvals, 1, function(z) pval=fisher.test(matrix(as.numeric(z[3:6]),nrow=2))$p.value)
@@ -242,20 +177,22 @@ final_df=function(a,b){
   }
 }
 
-denisova_matrix=calculate_enrichment(combined_cluster,'deni')
-neandertal_matrix=calculate_enrichment(combined_cluster,'nean')
+denisova_matrix=calculate_enrichment(combined_cluster,'deni')[,pop:='denisova']
+neandertal_matrix=calculate_enrichment(combined_cluster,'nean')[,pop:='neandertal']
 
 ## table p values
-# export_pvalues=function(x){
-#   df=copy(x)[,c('Cluster','Name','log10_tot_asnps_tf','log2_fold_enrichment','pval','adj_p','log10_p_adjust','significant_score')] %>% unique()
-# }
-# 
-# denisova_pval=export_pvalues(denisova_matrix)
-# neandertal_pval=export_pvalues(neandertal_matrix)
-# 
-# pvals=list(denisova_pval,neandertal_pval)
-# 
-# write.xlsx(pvals,'/home/dvespasiani/pvalue_tables/Supp_Table_TFs_hypergeom_pvalues.xlsx')
+export_pvalues=function(x){
+  df=copy(x)[,c('Cluster','Name','log10_numb_snps_tf','pval','adj_p','log10_p_adjust','significant_score')] %>% unique()
+}
+
+denisova_pval=export_pvalues(denisova_matrix)
+neandertal_pval=export_pvalues(neandertal_matrix)
+
+pvals=list(denisova_pval,neandertal_pval)
+
+write.xlsx(pvals,'/home/dvespasiani/Archaic_introgression_in_PNG/pvalue_tables/Supp_Table_high_freq_TFs_fisher_pvalues.xlsx')
+
+asnps_enrichment=rbind(denisova_matrix,neandertal_matrix)
 
 ## plot
 tf_enrich_plot=function(x){
@@ -274,23 +211,26 @@ tf_enrich_plot=function(x){
     xlab('\n Log2 fold enrichment \n')+
     ylab('-Log10 (P)')+
     xlim(-2,2)+
-    theme(
+    facet_wrap(pop~.,ncol = 2)+
+       theme(strip.text.x = element_text(),
+          strip.text.y = element_text(hjust = 0.5),
+          strip.background = element_rect(color = 'black', linetype = 'solid'),
+          strip.background.y = element_blank(),
+          strip.background.x =element_blank(),
+          panel.spacing=unit(1, "lines"),
+          panel.background =element_rect(fill = 'white', colour = 'black',size=1),
+          panel.grid.minor = element_blank(),
+          panel.grid.major = element_blank(),
       legend.position = "bottom",
       legend.key = element_rect(fill = "white", colour = "black"),
-      panel.background =element_rect(fill = 'white', colour = 'black',size = 0.5),
-      panel.grid.minor = element_blank(),
-      panel.grid.major = element_blank(),
-      axis.line = element_line(color = "black", size = 0, linetype = "solid"))
+     axis.line = element_blank())
 }
 
 
-pdf('/home/dvespasiani/volcano_plots/deni_volcano.pdf',width = 7,height=7)
-tf_enrich_plot(denisova_matrix)
+pdf('/home/dvespasiani/Archaic_introgression_in_PNG/volcano_plots/asnps_high_freq_volcano.pdf',width = 10,height=6)
+tf_enrich_plot(asnps_enrichment)
 dev.off()
 
-pdf('/home/dvespasiani/volcano_plots/nean_volcano.pdf',width = 7,height=7)
-tf_enrich_plot(neandertal_matrix)
-dev.off()
 
 
 
