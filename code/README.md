@@ -2,23 +2,16 @@
 * All analyses used the modules: r/4.0.0 and web_proxy on Spartan.
 * All SNPs input/output are in GRCh37/hg19 coordinates
 
-### command line used:
-* To annotate SNPs along the genome and to retrieve continental allele frequencies (1000 GP) we used the ensembl VEP tool specifying the following parameters
-
-```
-./vep --af --af_1kg --appris --biotype --buffer_size 500 --check_existing --distance 5000 --mane --plugin CADD,[path_to]/CADD_GRCh37_1.4_whole_genome_SNVs.tsv.gz --polyphen b --pubmed --regulatory --sift b --species homo_sapiens --symbol --transcript_version --tsl --cache --input_file [input_data] --output_file [output_file] --port 3337
-```
-
-* To download Roadmap Epigenomics mnemonics BED files 
+### command line used to download Roadmap Epigenomics mnemonics BED files:
 
 ```
 wget -r --no-parent -A '*coreMarks_mnemonics.bed.gz*' https://egg2.wustl.edu/roadmap/data/byFileType/chromhmmSegmentations/ChmmModels/coreMarks/jointModel/final/ 
 ```
 
-## Workflow
+## Workflow (not super detailed)
 * Sort SNPs by ancestry and filter them in order to yield a high-confidence set of archaic variants
-* Annotate SNPs across genome (VEP) and chromatin functional elements, comparing SNPs impact across cells
-* Evaluate the function of regulatory variants via motifbreakR retrieving DNA motifs from Jaspar 2018, HOCOMOCO v11 databases. Results were filtered to remove SNPs disrupting same motif across the two databases. For these variants keep those where that where the scoreRef-scoreAlt differnce in the PWM is the highest.
+* Annotate SNPs across genome and chromatin functional elements, comparing SNPs impact across cells
+* Evaluate the function of regulatory variants via motifbreakR retrieving DNA motifs from Jaspar 2018, HOCOMOCO v11 databases. 
 * Combine these SNPs with TF cluster info 
 * Retrieve the set of regulated genes and compare their functions among ancestries
 * Gene regulatory networks was generated using the stringApp v 1.3.0 in Cytoscape v 3.7.1
