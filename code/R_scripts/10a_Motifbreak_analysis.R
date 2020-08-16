@@ -27,7 +27,7 @@ input_files=function(dir){
   return(df)
 }
 
-snps=input_files('./snps_motifbreakr_format/new_set')
+snps=input_files('./snps_motifbreakr_format/non_splitted/')
 
 
 hocomoco_cores=c('HOCOMOCOv11-core-A','HOCOMOCOv11-core-B','HOCOMOCOv11-core-C',

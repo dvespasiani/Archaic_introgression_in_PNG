@@ -4,26 +4,30 @@ library(tidyr);library(openxlsx)
 library(wesanderson);library(RColorBrewer)
 library(ggthemes);library(ggplot2);library(ggpubr)
 
-setDTthreads(10)
-setwd('/data/projects/punim0586/dvespasiani/Files/PNG/')
-plot_output_dir='./home/dvespasiani/tfbs_plots/'
+options(width=150)
+numb_threads=getDTthreads()
+threads=setDTthreads(numb_threads-1)
+
+setwd('/data/projects/punim0586/dvespasiani/Files/Archaic_introgression_in_PNG/')
+
+plot_dir='./Results/Plots/Motifbreak/'
+table_dir='./Results/Tables/'
+
 motif_input_dir='./Motifbreak/Tx_and_CREs/TFBSs_disrupted_10neg5/'
 
 merging_keys=c('seqnames','start','end')
-immune_cells=c('TCells','BCells')
+immune_cells=c('TCells')
 
 cell_line_levels=c('Adipose','BCells','Brain','Digestive','Epithelial','ES_cells','ES_derived_cells','Heart','IMR90_fetal_lung_fibroblast',
                   'iPSC','Mesenchymal','Muscle','Myosatellite','Neurospheres','Other_cells','Smooth_muscle','TCells','Thymus')
 
+allele_frequency=0.3
 
-read_tfbs_snps=function(x){
-  x=as.character(list.files(x,recursive = F,full.names = T)) %>% 
-    lapply(function(y)
-      fread(y,sep=' ',header = T)[
-        ,end:=start+1
-        ][
-          !dataSource %like% 'HOCOMOCOv11-secondary-D' ## remove these instances from the analyses
-        ])
+##-----------------------------------------
+##         Recurrent function
+##-----------------------------------------
+
+assign_names=function(x){
   pop_names=c('denisova','neandertal','png')
   names(x)=pop_names
   for (i in seq_along(x)){
@@ -32,10 +36,26 @@ read_tfbs_snps=function(x){
 }
 
 
-snps_tfbs=read_tfbs_snps(paste(motif_input_dir,'combined/',sep=''))
-lapply(snps_tfbs,function(x)x[,c('seqnames','start','end')] %>% unique() %>% nrow())
 
-#LOOK AT enrichment OF STRONG TFBS ON ≠ CELLS FOR THE 3 PEOPLE
+##-----------------------------------------
+##         Read files
+##-----------------------------------------
+#1)
+read_tfbs_snps=function(x){
+  x=as.character(list.files(x,recursive = F,full.names = T)) %>% 
+    lapply(function(y)
+      fread(y,sep=' ',header = T)[
+        ,end:=start+1
+        ])
+  x=assign_names(x)
+  return(x)
+}
+
+
+tfbs=read_tfbs_snps(paste(motif_input_dir,'new_set/combined/',sep=''))
+lapply(tfbs,function(x)x[,c('seqnames','start','end')] %>% unique() %>% nrow())
+
+#2)
 read_active_states=function(x){
   x=as.character(list.files(x,recursive = F,full.names = T)) %>%
     lapply(function(y)
@@ -43,28 +63,23 @@ read_active_states=function(x){
         chrom_state%in%c('2_TssAFlnk','3_TxFlnk',"6_EnhG","7_Enh")
         ][
           ,chrom_state:=NULL
-          ]
-    )
-  pop_names=c('denisova','neandertal','png')
-  names(x)=pop_names
-  for (i in seq_along(x)){
-    assign(pop_names[i],x[[i]],.GlobalEnv)}
+          ])
+  x=assign_names(x)
   return(x)
 }
 
 states=read_active_states('./Chromatin_states/SNPs_chromHMM_annotated/new_set') 
 
+## combine tfbs with cell-type/state info
+tfbs_cres=purrr::map2(tfbs,states,inner_join,by=merging_keys)
+tfbs_cres=Map(mutate,tfbs_cres,'pop'=names(tfbs_cres))%>% 
+  lapply(function(x)x=as.data.table(x)[
+    ,c('seqnames','start','end','REF','ALT','cell_type','cell_line','all_freq','effect','alleleDiff','pop')
+    ] %>% unique())
 
-## combine tfbs with cell type info
-snps_tfbs_cres=purrr::map2(snps_tfbs,states,inner_join,by=merging_keys)
-snps_tfbs_cres=Map(mutate,snps_tfbs_cres,'pop'=names(snps_tfbs_cres))%>% lapply(function(x)x=as.data.table(x)[
-  ,c('seqnames','start','end','REF','ALT','cell_type','cell_line','all_freq','effect','pop')
-] %>% unique())
+lapply(tfbs_cres,function(x)x[,c('seqnames','start','end')] %>% unique() %>% nrow())
 
-lapply(snps_tfbs_cres,function(x)x=x[,all_freq:=round(all_freq,2)] [cell_line%in%c('BCells','TCells')][cell_line%in%c('BCells','TCells')][all_freq>=0.3][effect=='strong'][,c(1:3)]%>%unique()%>%nrow())
-# [cell_line%in%c('BCells','TCells')]
-
-asnps_enrichment=function(x,frequency,pwm_effect){
+asnps_enrichment=function(x,pwm_effect){
 
   calculate_enrichment=function(x){
     df=copy(x)
@@ -94,7 +109,7 @@ asnps_enrichment=function(x,frequency,pwm_effect){
   }
 
   df=copy(x)
-  df=lapply(df,function(y)y=y[,all_freq:=round(all_freq,2)][all_freq>=frequency][effect%in%pwm_effect][,c('effect'):=NULL] %>% unique())
+  df=lapply(df,function(y)y=y[,all_freq:=round(all_freq,1)][all_freq>=allele_frequency][effect%in%pwm_effect][,c('effect'):=NULL] %>% unique())
   df=calculate_enrichment(df)
   df=lapply(df,function(a)a=a[,c('pop.x','cell_type','cell_line','log2_enrichm')] %>% 
               setnames(old = 'pop.x',new='pop')%>% unique()) %>% rbindlist()
@@ -102,17 +117,14 @@ asnps_enrichment=function(x,frequency,pwm_effect){
 
 }
 
-tfbs_asnps_enrichment=asnps_enrichment(snps_tfbs_cres,0.3,'strong')
+tfbs_asnps_enrichment=asnps_enrichment(tfbs_cres,'strong')
 
-lapply(snps_tfbs_cres,function(x)x[
-    effect%in%'strong'
-    ][
-      ,all_freq:=round(all_freq,2)][all_freq>=0.3][
-        ,c('seqnames','start','end')
-        ] %>% unique() %>% nrow())
+# lapply(tfbs_cres,function(x)x[effect%in%'strong'][,all_freq:=round(all_freq,1)][all_freq>=allele_frequency][,c('seqnames','start','end')] %>% unique() %>% nrow())
+# lapply(tfbs_cres,function(x)x[effect%in%'strong'][cell_line%in%'TCells'][,all_freq:=round(all_freq,1)][all_freq>=allele_frequency][,c('seqnames','start','end')] %>% unique() %>% nrow())
+# lapply(tfbs_cres,function(x)x[effect%in%'strong'][cell_line%in%'BCells'][,all_freq:=round(all_freq,1)][all_freq>=allele_frequency][,c('seqnames','start','end')] %>% unique() %>% nrow())
+lapply(tfbs_cres,function(x)x[effect%in%'strong'][cell_line%in%c('BCells','TCells')][,all_freq:=round(all_freq,1)][all_freq>=allele_frequency][,c('seqnames','start','end')] %>% unique() %>% nrow())
 
 ## calculate significance via one-tailed t test
-
 stat_test_enrich=copy(tfbs_asnps_enrichment)[
   !cell_line%in%c('Adipose','IMR90_fetal_lung_fibroblast','Myosatellite','Thymus') ## remove these cell line as they lack replicates
 ] %>% unique()
@@ -159,10 +171,9 @@ adjust_pvalues=function(x){
 
 stat_test_enrich=lapply(stat_test_enrich,function(x)one_sample_ttest(x)) %>% rbindlist() %>% adjust_pvalues()
 
-
-
-tfbs_asnps_enrichment$cell_line=factor(tfbs_asnps_enrichment$cell_line,levels=c('Adipose','BCells','Brain','Digestive','Epithelial','ES_cells','ES_derived_cells','Heart','IMR90_fetal_lung_fibroblast',
-                                                                'iPSC','Mesenchymal','Muscle','Myosatellite','Neurospheres','Other_cells','Smooth_muscle','TCells','Thymus'))
+tfbs_asnps_enrichment$cell_line=factor(tfbs_asnps_enrichment$cell_line,
+levels=c('Adipose','BCells','Brain','Digestive','Epithelial','ES_cells','ES_derived_cells','Heart','IMR90_fetal_lung_fibroblast',
+         'iPSC','Mesenchymal','Muscle','Myosatellite','Neurospheres','Other_cells','Smooth_muscle','TCells','Thymus'))
 
 
 ### write supp table
@@ -181,8 +192,7 @@ enrich_pval_tables=function(x,table){
 
 
 tfbs_tables=enrich_pval_tables(stat_test_enrich,'fraction_snps_per_cell_type')
-write.xlsx(tfbs_tables,'~/Archaic_introgression_in_PNG/pvalue_tables/Supp_Table_TFBS_pvalues.xlsx')
-
+write.xlsx(tfbs_tables,paste(table_dir,'Supp_Table_7_TFBS_pvalues.xlsx',sep=''))
 
 tfbs_asnps_enrichment_plot=function(df,cells,y_scale){
   
@@ -228,21 +238,19 @@ tfbs_asnps_enrichment_plot=function(df,cells,y_scale){
           axis.line = element_line(color = "black", size = 0, linetype = "solid"))
 }
 
-pdf('/home/dvespasiani/Archaic_introgression_in_PNG/tfbs_plots/tfbs_asnps_enrichment_across_all_cells.pdf',width = 20,height = 20)
+pdf(paste(plot_dir,'tfbs_asnps_enrichment_across_all_cells.pdf',sep=''),width = 20,height = 20)
 tfbs_asnps_enrichment_plot(tfbs_asnps_enrichment,tfbs_asnps_enrichment$cell_line,'free_y')
 dev.off()
 
-pdf('/home/dvespasiani/Archaic_introgression_in_PNG/tfbs_plots/tfbs_asnps_enrichment_immune_cells.pdf',width = 8,height = 4)
+pdf(paste(plot_dir,'tfbs_asnps_enrichment_immune_cells.pdf'),width = 8,height = 4)
 tfbs_asnps_enrichment_plot(tfbs_asnps_enrichment,immune_cells,'fixed')
 dev.off()
-
 
 ##-----------------------------------------
 ##         Compute Ts:Tv ratio 
 ##-----------------------------------------
-
-tvts_ratio=function(x,frequency,pwm_effect){
-  x=copy(x)[,all_freq:=round(all_freq,2)][all_freq>=frequency][effect%in%pwm_effect]
+tvts_ratio=function(x,pwm_effect){
+  x=copy(x)[,all_freq:=round(all_freq,1)][all_freq>=allele_frequency][effect%in%pwm_effect]
   y=copy(x)[
     ,dna_ref_base:=ifelse(REF=='A' |REF=='G','purine','pyrimidine')
     ][
@@ -266,8 +274,7 @@ tvts_ratio=function(x,frequency,pwm_effect){
   return(y)
 }
 
-cells_tstv_ratio=lapply(snps_tfbs_cres,function(x)
-  x=tvts_ratio(x,0.3,'strong')) %>% rbindlist()
+cells_tstv_ratio=lapply(tfbs_cres,function(x)x=tvts_ratio(x,'strong')) %>% rbindlist()
 
 ## Make Ts:Tv ratio for all cells and report significance using one sample wilcoxon test
 stat_test=copy(cells_tstv_ratio)
@@ -304,14 +311,19 @@ enrich_pval_tables=function(x,table){
 
 
 ts_tv_tables=enrich_pval_tables(stat_test,'Ts_Tv_ratio')
-write.xlsx(ts_tv_tables,'~/Archaic_introgression_in_PNG/pvalue_tables/Supp_Table_TsTv_pvalues.xlsx')
-
+write.xlsx(ts_tv_tables,paste(table_dir,'Supp_Table_8_TsTv_pvalues.xlsx',sep=''))
 
 ## average png ts:tv ratio
-png_tstv=copy(ts_tv_tables[[1]])[pop=='png'][,mean:=mean(ts_tv_ratio)][,mean] %>% unique()
+png_tstv=copy(ts_tv_tables[[1]])[pop=='png'][,mean:=mean(ts_tv_ratio)][,mean] %>% unique() ## 1.9
 
-cells_tstv_ratio$cell_line=factor(cells_tstv_ratio$cell_line,levels=c('Adipose','BCells','Brain','Digestive','Epithelial','ES_cells','ES_derived_cells','Heart','IMR90_fetal_lung_fibroblast',
-                                                                              'iPSC','Mesenchymal','Muscle','Myosatellite','Neurospheres','Other_cells','Smooth_muscle','TCells','Thymus'))
+denisova_tstv_immune=copy(ts_tv_tables[[1]])[pop=='denisova'][cell_line%in%'TCells'][,mean:=mean(ts_tv_ratio)][,mean] %>% unique()
+nean_tstv_immune=copy(ts_tv_tables[[1]])[pop=='neandertal'][cell_line%in%'TCells'][,mean:=mean(ts_tv_ratio)][,mean] %>% unique() 
+png_tstv_immune=copy(ts_tv_tables[[1]])[pop=='png'][cell_line%in%'TCells'][,mean:=mean(ts_tv_ratio)][,mean] %>% unique() 
+
+
+cells_tstv_ratio$cell_line=factor(cells_tstv_ratio$cell_line,
+levels=c('Adipose','BCells','Brain','Digestive','Epithelial','ES_cells','ES_derived_cells','Heart','IMR90_fetal_lung_fibroblast',
+         'iPSC','Mesenchymal','Muscle','Myosatellite','Neurospheres','Other_cells','Smooth_muscle','TCells','Thymus'))
 
 tstv_ratio_plot=function(df,cells,y_scale){
   df=df[cell_line%in%cells]
@@ -365,11 +377,11 @@ tstv_ratio_plot=function(df,cells,y_scale){
           axis.line = element_line(color = "black", size = 0, linetype = "solid"))
 }
 
-pdf('/home/dvespasiani/Archaic_introgression_in_PNG/tfbs_plots/tv_ts_ratio_all_cells.pdf',width = 20,height = 20)
+pdf(paste(plot_dir,'tv_ts_ratio_all_cells.pdf'),width = 20,height = 20)
 tstv_ratio_plot(cells_tstv_ratio,cells_tstv_ratio$cell_line,'free_y')
 dev.off()
 
-pdf('/home/dvespasiani/Archaic_introgression_in_PNG/tfbs_plots/tv_ts_ratio_imunue_cells.pdf',width = 8,height = 4)
+pdf(paste(plot_dir,'tv_ts_ratio_imunue_cells.pdf'),width = 8,height = 4)
 tstv_ratio_plot(cells_tstv_ratio,immune_cells,'fixed')
 dev.off()
 
@@ -392,19 +404,19 @@ dev.off()
 #             ,cell_state:=state
 #             ] %>% setorderv(c('seqnames','start'),1)%>% unique()
 #   return(x)
-#   
+# 
 # }
 # 
-# rested_atacseq=read_atacseq('../Calderon_atac_seq_peaks/rested_cells')
-# stimulated_atacseq=read_atacseq('../Calderon_atac_seq_peaks/stimulated_cells')
+# rested_atacseq=read_atacseq('../Annotation_and_other_files/Calderon_atac_seq_peaks/rested_cells.gz')
+# stimulated_atacseq=read_atacseq('../Annotation_and_other_files/Calderon_atac_seq_peaks/stimulated_cells.gz')
 # immune_atacseq=rbind(rested_atacseq,stimulated_atacseq)
-# # immune_atacseq=immune_atacseq[,n:=.N,by=.(seqnames,start,end)][n==1][,n:=NULL]
-# ## Immune strong tfbs snps in atac peaks 
+# 
+# # ## Immune strong tfbs snps in atac peaks 
 # selected_tfbs_atac_peaks=function(tfbs,cells){
 #   tfbs=lapply(tfbs,function(x)x=x[cell_line%in%cells])
 #   setkeyv(immune_atacseq,merging_keys)
 #   lapply(tfbs,function(x)setkeyv(x,merging_keys))
-#   
+# 
 #   selected_snps_in_ataseq=lapply(tfbs,function(x)
 #     x=foverlaps(x,immune_atacseq,type = 'within')[
 #       ,c('seqnames','i.start','i.end','cell_state','pop','all_freq','effect')
@@ -418,12 +430,12 @@ dev.off()
 #   )
 #   return(selected_snps_in_ataseq)
 # }
-# immune_tfbs_atac=selected_tfbs_atac_peaks(snps_tfbs_cres,immune_cells)
-# 
-# ## fraction in rested/stimulated
-# stimulated_vs_rested=function(x,frequency,pwm_effect){
+# immune_tfbs_atac=selected_tfbs_atac_peaks(new_tfbs_cres,immune_cells)
+# # 
+# # ## fraction in rested/stimulated
+# stimulated_vs_rested=function(x,pwm_effect){
 #   x=copy(x)
-#   x=x %>% lapply(function(y)y=y[,all_freq:=round(all_freq,2)][all_freq>=frequency][
+#   x=x %>% lapply(function(y)y=y[,all_freq:=round(all_freq,1)][all_freq>=allele_frequency][
 #     effect%in%pwm_effect])
 #   x=x%>% lapply(function(y)
 #     y=y[
@@ -449,7 +461,7 @@ dev.off()
 #     ]
 # }
 # 
-# immune_stimulated_rested=stimulated_vs_rested(immune_tfbs_atac,0.05,c('weak','strong'))
+# immune_stimulated_rested=stimulated_vs_rested(immune_tfbs_atac,'strong')
 # ## enrichment in these elements
 # open_chrom_regions=copy(immune_atacseq) %>% unique()
 # open_chrom_regions=open_chrom_regions[

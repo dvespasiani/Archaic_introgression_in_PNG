@@ -4,10 +4,14 @@ library(wesanderson);library(RColorBrewer)
 library(ggthemes);library(ggplot2);library(ggpubr)
 library(openxlsx)
 
-setDTthreads(8)
+numb_threads=getDTthreads()
+threads=setDTthreads(numb_threads-1)
+
 setwd('/data/projects/punim0586/dvespasiani/Files/Archaic_introgression_in_PNG/Chromatin_states/')
 
-plot_output_dir='~/Archaic_introgression_in_PNG/ranked_enrichments/'
+# plot_output_dir='~/Archaic_introgression_in_PNG/ranked_enrichments/'
+plot_dir='../Results/Plots/Chromatin_State/relative_enrichment/'
+table_dir='../Results/Tables/'
 
 assign_names=function(x){
   pop_names=c('denisova','neandertal') 
@@ -117,7 +121,7 @@ asnp_highfreq_enrichment_pval=simplified(asnp_highfreq_enrichment_pval)
 
 pval=list(asnp_allfreq_enrichment_pval,asnp_highfreq_enrichment_pval)
 pval=lapply(pval,function(x)x=x[order(factor(x$chrom_state,levels=chrom_state_levels))])
-write.xlsx(pval,'~/Archaic_introgression_in_PNG/pvalue_tables/Supp_Table_ranked_enrichment.xlsx')
+write.xlsx(pval,paste(table_dir,'Supp_Table_5_immune_enrichment.xlsx',sep=''))
 
 
 ## plot enrichment as dot plots
@@ -197,19 +201,19 @@ allstates_allfreq_enrichment_plot=lapply(asnps_allfreq_cellenrich,function(x)enr
 allstates_highfreq_enrichment_plot=lapply(asnps_highfreq_cellenrich,function(x)enrichment_plot(x))
 
 
-pdf(paste0(plot_output_dir,'deni_allfreq_allstates_enrichment.pdf',sep=''),width=8,height = 8)
+pdf(paste0(plot_dir,'deni_allfreq_allstates_enrichment.pdf',sep=''),width=10,height = 10)
 allstates_allfreq_enrichment_plot[[1]]
 dev.off()
 
-pdf(paste0(plot_output_dir,'nean_allfreq_allstates_enrichment.pdf',sep=''),width=8,height = 8)
+pdf(paste0(plot_dir,'nean_allfreq_allstates_enrichment.pdf',sep=''),width=10,height = 10)
 allstates_allfreq_enrichment_plot[[2]]
 dev.off()
 
-pdf(paste0(plot_output_dir,'deni_highfreq_allstates_enrichment.pdf',sep=''),width=8,height = 8)
+pdf(paste0(plot_dir,'deni_highfreq_allstates_enrichment.pdf',sep=''),width=10,height = 10)
 allstates_highfreq_enrichment_plot[[1]]
 dev.off()
 
-pdf(paste0(plot_output_dir,'nean_highfreq_allstates_enrichment.pdf',sep=''),width=8,height = 8)
+pdf(paste0(plot_dir,'nean_highfreq_allstates_enrichment.pdf',sep=''),width=10,height = 10)
 allstates_highfreq_enrichment_plot[[2]]
 dev.off()
 
@@ -220,7 +224,7 @@ cool_states=cool_states$chrom_state %>% unique()
 
 deni_relevant_states=copy(asnps_highfreq_cellenrich[[1]])[chrom_state%in%cool_states]
 
-pdf(paste0(plot_output_dir,'deni_highfreq_relevantstates_ranked_enrichment.pdf',sep=''),width=5,height = 15)
+pdf(paste0(plot_dir,'deni_highfreq_relevantstates_ranked_enrichment.pdf',sep=''),width=5,height = 15)
 ggplot(deni_relevant_states,aes(x=cell_line,y=mean,col=chrom_state))+
   geom_line(aes(group=1),color='black',size=0.3)+
   geom_errorbar(aes(ymin=mean-sd, ymax=mean+sd),position='dodge',width=0,size=1.2)+

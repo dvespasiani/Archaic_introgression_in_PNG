@@ -4,12 +4,16 @@ library(GenomicRanges);library(R.utils)
 library(wesanderson);library(RColorBrewer);
 library(ggthemes);library(ggplot2);library(ggpubr)
 
-setDTthreads(10)
+numb_threads=getDTthreads()
+threads=setDTthreads(numb_threads-1)
+
 ### load cells 
 setwd('/data/projects/punim0586/dvespasiani/Files/')
 
 output_dir='./Archaic_introgression_in_PNG/Chromatin_states/SNPs_chromHMM_annotated/new_set/'
 simplified_dir='./Archaic_introgression_in_PNG/Chromatin_states/simplified_set/new_set/'
+
+plot_dir='./Archaic_introgression_in_PNG/Results/Plots/Chromatin_State/'
 
 
 read_cells=function(x){
@@ -36,12 +40,12 @@ cells=read_cells('./Annotation_and_other_files/Roadmap_data/ChromHMM_15states_ce
 
 read_snps=function(x){
   pop=as.character(list.files(x,recursive = F,full.names = T)) %>% 
-    lapply(function(y)fread(y,sep=' ',header=T,stringsAsFactors = T,
-                            select = c('seqnames','start','end','ref','alt',
+    lapply(function(y)fread(y,sep=' ',header=T,
+                            select = c('CHR','FROM','TO','REF','ALT',
                                        'ANC','all_frequency','freq_range')) %>% 
+             setnames(c('seqnames','start','end','ref','alt','ancestral','all_freq','freq_range')) %>% 
              makeGRangesFromDataFrame(keep.extra.columns =T) %>% 
-             as.data.table() %>% unique() %>% 
-             setnames(c('seqnames','start','end','width','strand','ref','alt','ancestral','all_freq','freq_range'))
+             as.data.table() %>% unique()
     ) 
   pop_names=as.character(list.files(x,recursive=F,full.names=F))
   pop_names=gsub("\\..*","",pop_names)
@@ -51,7 +55,7 @@ read_snps=function(x){
   return(pop)
 }
 
-snps=read_snps('./Archaic_introgression_in_PNG/OoA_snps')
+snps=read_snps('./Archaic_introgression_in_PNG/Grouped_filtered_snps/new_set/')
 
 ### merge snps with chromatin states ###
 lapply(snps,function(x)setkey(x, seqnames, start, end))
@@ -270,7 +274,7 @@ ratio_plot=function(x){
 }
 
 ##
-pdf('~/Archaic_introgression_in_PNG/asnps_nasnps_ratio/asnps_nasnps_ratio.pdf',width=7,height =10)
+pdf(paste(plot_dir,'snps_distribution/asnps_nasnps_ratio.pdf',sep=''),width=7,height =10)
 ratio_plot(snps_nofreqsplit)
 dev.off()
 
@@ -291,10 +295,10 @@ df=Map(mutate,df,'pop'=names(df)) %>% lapply(function(x)setDT(x))
 numb_snps_chromstates=prepare_data(snps_chromatin_states)
 
 
-test=copy(numb_snps_chromstates[[1]])
-test=test[order(as.factor(readr::parse_number(gsub("^.*\\.", "",x$chrom_state)))),][
-  ,chrom_state:=gsub('.*_','',chrom_state)
-  ]
+# test=copy(numb_snps_chromstates[[1]])
+# test=test[order(as.factor(readr::parse_number(gsub("^.*\\.", "",x$chrom_state)))),][
+#   ,chrom_state:=gsub('.*_','',chrom_state)
+#   ]
 
 
 log10_numbsnps_plot=function(df){
@@ -337,11 +341,11 @@ log10_numbsnps_plot=function(df){
   
 }
 
-pdf('~/Archaic_introgression_in_PNG/asnps_nasnps_ratio/denisova_log10_numbsnps_chromstates.pdf',width = 7,height =2)
+pdf(paste(plot_dir,'snps_distribution/denisova_log10_numbsnps_chromstates.pdf',sep=''),width = 7,height =2)
 log10_numbsnps_plot(numb_snps_chromstates[[1]])
 dev.off()
 
-pdf('~/Archaic_introgression_in_PNG/asnps_nasnps_ratio/neandertal_log10_numbsnps_chromstates.pdf',width = 7,height =2)
+pdf(paste(plot_dir,'snps_distribution/neandertal_log10_numbsnps_chromstates.pdf',sep=''),width = 7,height =2)
 log10_numbsnps_plot(numb_snps_chromstates[[2]])
 dev.off()
 

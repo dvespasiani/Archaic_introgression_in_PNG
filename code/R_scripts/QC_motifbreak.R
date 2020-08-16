@@ -1,7 +1,7 @@
 ## QCs output motifbreak + table SNPs
 library(dplyr); library(data.table); library(magrittr)
 
-setwd('/data/projects/punim0586/dvespasiani/Files/PNG')
+setwd('/data/projects/punim0586/dvespasiani/Files/Archaic_introgression_in_PNG')
 
 motifbreak_path='./Motifbreak/Tx_and_CREs'
 input_snps_dir='/snps_motifbreakr_format/non_splitted/'
@@ -103,7 +103,7 @@ combined=purrr::map2(jaspar_tfbs,hocomoco_tfbs,rbind) %>%
   lapply(function(x)x=x[,c('seqnames','start','end','REF','ALT','strand','geneSymbol','providerName','dataSource','alleleDiff','effect')] %>% 
            unique())
 
-combined=lapply(combined,function(x)x=x[, .SD[which.max(abs(alleleDiff))], by=.(seqnames,start,end,REF,ALT,geneSymbol)])
+# combined=lapply(combined,function(x)x=x[, .SD[which.max(abs(alleleDiff))], by=.(seqnames,start,end,REF,ALT,geneSymbol)])
 
 combined_dir=paste0(motifbreak_path,paste0(output_snps_dir,'combined/',sep=''),sep='')
 combined_filenames=paste0(combined_dir,names(combined),sep='')

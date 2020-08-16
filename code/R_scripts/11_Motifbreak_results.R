@@ -10,16 +10,16 @@ library(annotatr)
 
 ## tfbs snp results ###
 motif_input_dir='./Motifbreak/Tx_and_CREs/TFBSs_disrupted_10neg5/'
+plot_dir='./Results/Plots/Motifbreak/'
 
-setDTthreads(8)
+numb_threads=getDTthreads()
+threads=setDTthreads(numb_threads-1)
 
 setwd('/data/projects/punim0586/dvespasiani/Files/Archaic_introgression_in_PNG/')
 
 tfbs=function(x){
   x=as.character(list.files(x,full.names = T,recursive = F)) %>% 
-    lapply(function(y)fread(y,sep=' ',header = T)[
-      !dataSource%in%'HOCOMOCOv11-secondary-D'
-      ])
+    lapply(function(y)fread(y,sep=' ',header = T))
   
   pop_names=c('denisova','neandertal','png')
   names(x)=pop_names
@@ -29,11 +29,12 @@ tfbs=function(x){
   
 }
 
-snps_tfbs=tfbs('./Motifbreak/Tx_and_CREs/TFBSs_disrupted_10neg5/combined')
-#lapply(snps_tfbs,function(x)x=x[,c('seqnames','start','end')] %>% unique() %>% nrow())
-## 39954 deni
-## 22756 nean
-## 310055 png
+snps_tfbs=tfbs('./Motifbreak/Tx_and_CREs/TFBSs_disrupted_10neg5/new_set/combined')
+
+# lapply(snps_tfbs,function(x)x=x[,c('seqnames','start','end')] %>% unique() %>% nrow())
+## 39269 deni
+## 22457 nean
+## 294031 png
 ## annotate these snpa and look where they occurr
 annotation_function = function(x){
 annots = c('hg19_basicgenes', 'hg19_genes_intergenic')
@@ -84,8 +85,8 @@ genome_location=function(x){
 }
 tfbs_genome_location=genome_location(tfbs_snps_annotated)
 
-mean(tfbs_genome_location[genomic_element=='Enhancers']$fraction)*100 ## 6.03 %
-mean(tfbs_genome_location[genomic_element=='Promoters']$fraction)*100 ## 1.65 %
+mean(tfbs_genome_location[genomic_element=='Enhancers']$fraction)*100 ## 6.00 %
+mean(tfbs_genome_location[genomic_element=='Promoters']$fraction)*100 ## 1.64 %
 
 #barplot tfbs location
 tfbs_location_plot=ggplot(tfbs_genome_location,
@@ -110,9 +111,6 @@ tfbs_location_plot=ggplot(tfbs_genome_location,
         axis.text=element_text(),
         axis.line = element_line(color = "black",size = 0.5, linetype = "solid"))
 
-pdf('~/Archaic_introgression_in_PNG/tfbs_plots/tfbs_snps_location_plot.pdf',width = 8,height = 5)
+pdf(paste(plot_dir,'tfbs_snps_location_plot.pdf',sep=''),width = 8,height = 5)
 tfbs_location_plot
 dev.off()
-
-
-

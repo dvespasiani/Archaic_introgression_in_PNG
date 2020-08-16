@@ -1,15 +1,21 @@
 ## look at pleitropic activity of snps across states
-## expectations is that introgression is depleted from pleiotropic functional elements (Tellis et al 2019)]
+## expectations is that introgression is depleted from pleiotropic functional elements (Tellis et al 2019)
 library(data.table);library(magrittr);library(dplyr)
 library(GenomicRanges)
 library(wesanderson);library(RColorBrewer)
 library(ggthemes);library(ggplot2);library(ggpubr)
 library(R.utils);library(openxlsx)
 
-setDTthreads(8)
+options(width = 150)
+numb_threads=getDTthreads()
+threads=setDTthreads(numb_threads-1)
 
 ### load cells 
 setwd('/data/projects/punim0586/dvespasiani/Files/')
+
+table_dir='./Archaic_introgression_in_PNG/Results/Tables/'
+plot_dir='./Archaic_introgression_in_PNG/Results/Plots/Chromatin_State/'
+
 
 read_states=function(x){
   x=as.character(list.files(x,recursive = F,full.names = T)) %>% 
@@ -117,9 +123,10 @@ pvalues_highfreq=pvalues(snps_highfreq_pleiotropy)
 pval=list(pvalues_allfreq,pvalues_highfreq)
 pval=lapply(pval,function(x)x=x[order(factor(x$chrom_state,levels=chrom_state_levels))])
 
-write.xlsx(pval,'~/Archaic_introgression_in_PNG/pvalue_tables/Supp_Table_4_pleiotropy_pvalues.xlsx')
+names(pval)=c('all frequencies','common-to-high frequency')
+write.xlsx(pval,paste(table_dir,'Supp_Table_4_pleiotropy_pvalues.xlsx',sep=''))
 
-
+## this is to plot values (bit messy with the first one but correct)
 second_pleiotropy=function(x,freq){
   
   calculate_pleiotropy=function(x){
@@ -208,10 +215,10 @@ second_pleiotropy_plot=function(df){
 
   }
 
-pdf('~/Archaic_introgression_in_PNG/pleiotropy/pleiotropy_allfreq_plot.pdf',width = 7,height = 7)
+pdf(paste(plot_dir,'pleiotropy/pleiotropy_allfreq_plot.pdf',sep=''),width = 7,height = 7)
 second_pleiotropy_plot(second_snps_all_freq_pleiotropy)
 dev.off()
 
-pdf('~/Archaic_introgression_in_PNG/pleiotropy/pleiotropy_highfreq_plot.pdf',width = 7,height = 7)
+pdf(paste(plot_dir,'pleiotropy/pleiotropy_highfreq_plot.pdf',sep=''),width = 7,height = 7)
 second_pleiotropy_plot(second_snps_high_freq_pleiotropy)
 dev.off()

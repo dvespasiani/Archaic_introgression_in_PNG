@@ -4,13 +4,18 @@ library(purrr)
 library(GenomicRanges);library(biomaRt);
 library(openxlsx)
 library(ggplot2);library(wesanderson);library(ggthemes);library(ggfortify)
+library(ggpubr)
 
-setDTthreads(8)
+numb_threads=getDTthreads()
+threads=setDTthreads(numb_threads-1)
 
-setwd('/data/projects/punim0586/dvespasiani/Files/PNG')
+plot_dir='./Results/Plots/Motifbreak/'
+
+
+setwd('/data/projects/punim0586/dvespasiani/Files/Archaic_introgression_in_PNG')
 
 # gtex v8 tissue specific cis-eqtls 
-cis_eqtls=as.character(list.files('./GTEx/GTEx_Analysis_v8_eQTL/',full.names = T,recursive = F)) %>% 
+cis_eqtls=as.character(list.files('../Annotation_and_other_files/GTEx/GTEx_Analysis_v8_eQTL/',full.names = T,recursive = F)) %>% 
   lapply(function(x) x=fread(x,sep = '\t',header = T,
           select = c('chr','variant_pos','ref','alt','tss_distance', 'gene_id',
                       'gene_name','gene_chr','gene_start','gene_end','strand',
@@ -31,7 +36,7 @@ assign_names=function(x,list_df){
   return(list_df)
 }
 
-cis_eqtls=assign_names('./GTEx/GTEx_Analysis_v8_eQTL/',cis_eqtls)
+cis_eqtls=assign_names('../Annotation_and_other_files/GTEx/GTEx_Analysis_v8_eQTL/',cis_eqtls)
 cis_eqtls=Map(mutate,cis_eqtls,'tissue'=names(cis_eqtls))
 
 # separate liftover for cis-regulatory variant and gene
@@ -53,7 +58,7 @@ regulated_genes=lapply(regulated_genes,function(x)
 
 # liftover to change from hg38 to hg19
 library(rtracklayer)
-liftover_chain=import.chain('./LiftOver/hg38ToHg19.over.chain')
+liftover_chain=import.chain('../Annotation_and_other_files/LiftOver/hg38ToHg19.over.chain')
 
 liftover=function(x,y){
   x=liftOver(x,y) 
@@ -79,11 +84,9 @@ cis_eqtls_hg19=rbindlist(cis_eqtls_hg19)
 # read tfbs and merge dfs
 tfbs=function(x){
  x=as.character(list.files(x,full.names = T,recursive = F)) %>% 
-    lapply(function(y)fread(y,sep=' ',header = T)[
-      !dataSource%in%'HOCOMOCOv11-secondary-D'
-    ])
+    lapply(function(y)fread(y,sep=' ',header = T))
  
-pop_names=c('denisova','neandertal','png')
+pop_names=c('denisova','neanderthal','png')
 names(x)=pop_names
 for (i in seq_along(x)){
   assign(pop_names[i],x[[i]],.GlobalEnv)}
@@ -91,11 +94,8 @@ return(x)
 
 }
  
-snps_tfbs=tfbs('./Motifbreak/Tx_and_CREs/TFBSs_disrupted_10neg5/combined')
+snps_tfbs=tfbs('./Motifbreak/Tx_and_CREs/TFBSs_disrupted_10neg5/new_set/combined')
 lapply(snps_tfbs,function(x)x=x[,c('seqnames','start','end')] %>% unique() %>% nrow())
-## denisova 39954
-## neandertal 22756
-## png 310055
 
 ## SNPS that are eQTLs
 tfbs_eqtls=function(x){
@@ -109,14 +109,12 @@ snps_tfbs_eqtls=tfbs_eqtls(snps_tfbs)
 ## table tfbs snps that are cis-eQTLs
 table_tfbs_eqtls=lapply(snps_tfbs_eqtls,function(x)
   x=x[
-    ,c('seqnames','start','end','rs_id_dbSNP151','ALT','gene_name','tissue','maf','qval')
-  ] %>% setnames(c('seqnames','start','end','rsid','risk_allele','gene_name','tissue','maf','qval'))%>% unique()
-    )
+    ,c('seqnames','start','end','REF','ALT','rs_id_dbSNP151','gene_name','tissue','maf','qval')
+    ] %>% unique())
 lapply(table_tfbs_eqtls,function(x)x=x[,c(1:3)] %>% unique() %>% nrow())
-# 36 denisova (0.001%)
-# 75 neandertal (0.003%)
-# 542 png (0.0017%)
-
+# 45 (0.11) denisova
+# 83 (0.37) neanderthal
+# 601 (0.20) png
 
 ## write tfbs eqtls
 # tfbs_output_dir='./Motifbreak/TFBS_eQTLs/'
@@ -125,89 +123,65 @@ lapply(table_tfbs_eqtls,function(x)x=x[,c(1:3)] %>% unique() %>% nrow())
 
 # frequency differences between gtex maf and snp freq in png
 original_files=function(x){
-  x=as.character(list.files(x,full.names = T,recursive = F)) %>% 
+  x=as.character(list.files(x,full.names = T,recursive = F)) %>%
     lapply(function(y)
       fread(y,sep=' ',header = T)[
-       ,freq_range:=ifelse(all_frequency<=0.05,'low','high') # adjusted  
+       ,freq_range:=ifelse(all_frequency<=0.05,'low','high') # adjusted
       ]
     )
-  pop_names=c('denisova','neandertal','png')
+  pop_names=c('denisova','neanderthal','png')
   names(x)=pop_names
   for (i in seq_along(x)){
     assign(pop_names[i],x[[i]],.GlobalEnv)}
-  x=Map(mutate,x,'pop'=names(x)) 
+  x=Map(mutate,x,'pop'=names(x))
   x=lapply(x,function(y)y %>% as.data.table())
   return(x)
-  
+
 }
 snps=original_files('./Grouped_filtered_snps/new_set/')
 
-gtex_png_comparison=function(png,gtex){
-  png=copy(png)
-  gtex=copy(gtex)
-  png=lapply(png,function(x)
-    x=x[,frequency_type:='png_snpfreq'
-        ][
-          , snp_freq:=all_frequency
-          ][
-            ,c('CHR','FROM','TO','snp_freq','pop','frequency_type')
-            ] %>% unique())
-  
-  gtex=lapply(gtex,function(x)
-    x=x[,frequency_type :='maf'
-        ][
-          ,snp_freq:=maf
-          ][
-            ,c('seqnames','start','end','snp_freq','pop','frequency_type') 
-            ] %>% unique()%>% group_by(`seqnames`,`start`,`end`) %>% filter(`snp_freq`==max(snp_freq))%>% 
-      as.data.table())
-  
-  x=purrr::map2(png,gtex,semi_join,by=c('CHR'='seqnames','FROM'='start','TO'='end'))
-  y=purrr::map2(gtex,png,semi_join,by=c('seqnames'='CHR','start'='FROM','end'='TO')) 
-  x=rbindlist(x)[
-    ,c(4:6)
-    ]
-  y=rbindlist(y)[
-    ,c(4:6)
-    ]
-  z=rbind(x,y)
-  return(z)
- 
-}
 
-snps_eqtl_freq=gtex_png_comparison(snps,snps_tfbs_eqtls)
+table_tfbs_eqtls=purrr::map2(table_tfbs_eqtls,snps,inner_join,by=c('seqnames'='CHR','start'='FROM','end'='TO','REF','ALT'))
+table_tfbs_eqtls=lapply(table_tfbs_eqtls,function(x)x=as.data.table(x))
 
-adjust_pvalues=function(x){
-  df=copy(x)
-  pvals_df=copy(df)
-  pvals_df=pvals_df$p
-  pvals_df_adjusted=p.adjust(pvals_df,'fdr')%>%as.data.table() %>% setnames('p.adj')
-  pvals_df_adjusted=pvals_df_adjusted[
-    ,p.signif:= ifelse(`p.adj`<=0.0001,'****',
-                       ifelse(`p.adj`>0.0001 &`p.adj`<=0.001,'***',
-                              ifelse(`p.adj`>0.001 & `p.adj`<=0.01,'**',
-                                     ifelse(`p.adj`>0.01 & `p.adj`<=0.05,'*',' '))))
-    ]
-  df_final=cbind(df,pvals_df_adjusted)
-  return(df_final)
-}
+table_tfbs_eqtls=lapply(table_tfbs_eqtls,function(x)
+  x=x[
+    ,c('seqnames','start','end','maf','all_frequency','pop')
+  ] %>% unique())
 
-pvalues=copy(snps_eqtl_freq)
-pvalues=pvalues%>% split(as.factor(snps_eqtl_freq$pop)) %>% 
-  lapply(function(x)x=x[
-    ,p:=wilcox.test(snp_freq ~ frequency_type, data=x,paired=T)$p.val
-    ][
-      ,statistic:=wilcox.test(snp_freq ~ frequency_type, data=x,paired=T)$statistic
-    ]) %>% rbindlist() %>% adjust_pvalues()
-pvalues=pvalues[,c('pop','statistic','p','p.adj','p.signif')] %>% unique()
-## p values
-## denisova    W=472   padj 0.4
-## neandertal  W=715   padj  1.158345e-04     ***
-## png         W=34470 padj 6.070072e-27     ****
+maf_frequency=copy(table_tfbs_eqtls)
+maf_frequency=lapply(maf_frequency,function(x)x=x[
+  ,c('all_frequency'):=NULL
+  ][
+    ,frequency_type:='maf'
+    ] %>% setnames(old='maf',new='snp_frequency'))
+
+png_frequency=copy(table_tfbs_eqtls)
+png_frequency=lapply(png_frequency,function(x)x=x[
+                       ,c('maf'):=NULL
+                       ][
+                         ,frequency_type:='png_snpfreq'
+                         ] %>% setnames(old='all_frequency',new='snp_frequency'))
+
+
+compare_frequencies=purrr::map2(maf_frequency,png_frequency,rbind)
+
+pvalues=copy(compare_frequencies)
+
+pvalues=lapply(pvalues,function(x)
+  compare_means(snp_frequency~frequency_type,
+                      method = "wilcox.test",
+                     x,ref.group='maf',
+                      paired = T) %>% as.data.table())
+
+names(pvalues)=c('denisova','neanderthal','png')
+pvalues=Map(mutate,pvalues,'pop'=names(pvalues))
+
 
 eQTL_freq_plot=function(df){
-  
-  pval=copy(pvalues)[,frequency_type:='png_snpfreq']
+  df=copy(df) %>% rbindlist()
+  pval=copy(pvalues) %>% rbindlist()
+    pval=pval[,frequency_type:='png_snpfreq']
   
   
   my_palette=c('#999999', # GTEx V8
@@ -217,13 +191,12 @@ eQTL_freq_plot=function(df){
   names(my_palette)= levels(as.factor(df$frequency_type))
   colScale=scale_fill_manual(name= " ",values = my_palette,labels=c('GTEx V8','Jacobs et al.2019')) 
   
-  ggplot(df,aes(x=pop,y=snp_freq,fill=frequency_type))+
+  ggplot(df,aes(x=pop,y=snp_frequency,fill=frequency_type))+
     geom_violin(trim=F,scale = "width")+
     geom_boxplot(width=0.2, position =  position_dodge(width = 0.9),outlier.size = 0.3)+
     geom_jitter(position = position_jitterdodge(jitter.width=0.2,dodge.width = 0.9), size=0.05)+
-    # geom_jitter(position=position_jitter(0.1))+
     geom_text(data=pval, aes(x=pop, y=1.0001, label=p.signif), col='black', size=7)+
-    scale_x_discrete(limit = c("denisova", "neandertal",'png'),labels = c("Denisova","Neanderthal",'Papuans'))+
+    scale_x_discrete(limit = c("denisova", "neanderthal",'png'),labels = c("Denisova","Neanderthal",'Papuans'))+
     colScale+
     xlab(' ')+
     ylab('\n eQTL SNPs frequency \n')+
@@ -244,8 +217,8 @@ eQTL_freq_plot=function(df){
   
 }
 
-pdf('/home/dvespasiani/Archaic_introgression_in_PNG/tfbs_plots/tfbs_eqtls_freq.pdf',width = 7,height =7)
-eQTL_freq_plot(snps_eqtl_freq)
+pdf(paste(plot_dir,'tfbs_eqtls_freq.pdf',sep=''),width = 7,height =7)
+eQTL_freq_plot(compare_frequencies)
 dev.off()
 
 ## check if tfbs snp is on the same strand of regulated gene and how far they are ~
