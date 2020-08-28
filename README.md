@@ -13,4 +13,4 @@ This repo contains all scripts used to perform the analyses (See ./code/R_script
 
 ## Manuscript
 Detailed description of the work and results is available at: 
-* (https://www.biorxiv.org/content/10.1101/2020.07.09.196444v1.article-metrics)
+* (https://www.biorxiv.org/content/10.1101/2020.07.09.196444v1)
