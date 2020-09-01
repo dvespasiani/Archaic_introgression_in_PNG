@@ -1,6 +1,6 @@
 ## Scripts
 * All analyses used the modules: r/4.0.0 and web_proxy on Spartan.
-* All SNPs input/output are in GRCh37/hg19 coordinates
+* All SNPs coordinates are in GRCh37/hg19 coordinates
 
 ### command line used to download Roadmap Epigenomics mnemonics BED files:
 
