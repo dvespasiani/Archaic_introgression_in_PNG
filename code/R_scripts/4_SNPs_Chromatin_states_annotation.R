@@ -6,15 +6,15 @@ library(ggthemes);library(ggplot2);library(ggpubr)
 
 numb_threads=getDTthreads()
 threads=setDTthreads(numb_threads-1)
+options(width=150)
 
 ### load cells 
 setwd('/data/projects/punim0586/dvespasiani/Files/')
 
-output_dir='./Archaic_introgression_in_PNG/Chromatin_states/SNPs_chromHMM_annotated/new_set/'
-simplified_dir='./Archaic_introgression_in_PNG/Chromatin_states/simplified_set/new_set/'
+output_dir='./Archaic_introgression_in_PNG/Chromatin_states/SNPs_chromHMM_annotated/'
+simplified_dir='./Archaic_introgression_in_PNG/Chromatin_states/simplified_set/'
 
 plot_dir='./Archaic_introgression_in_PNG/Results/Plots/Chromatin_State/'
-
 
 read_cells=function(x){
   cells=as.character(list.files(x,recursive = F,full.names = T)) %>% 
@@ -38,6 +38,7 @@ read_cells=function(x){
 
 cells=read_cells('./Annotation_and_other_files/Roadmap_data/ChromHMM_15states_cell_lines_combined/Continuous_states')
 
+##  read snps
 read_snps=function(x){
   pop=as.character(list.files(x,recursive = F,full.names = T)) %>% 
     lapply(function(y)fread(y,sep=' ',header=T,
@@ -50,12 +51,10 @@ read_snps=function(x){
   pop_names=as.character(list.files(x,recursive=F,full.names=F))
   pop_names=gsub("\\..*","",pop_names)
   names(pop)=pop_names
-  for (i in seq_along(pop)){
-    assign(pop_names[i],pop[[i]],.GlobalEnv)}
   return(pop)
 }
 
-snps=read_snps('./Archaic_introgression_in_PNG/Grouped_filtered_snps/new_set/')
+snps=read_snps('./Archaic_introgression_in_PNG/Grouped_filtered_snps/')
 
 ### merge snps with chromatin states ###
 lapply(snps,function(x)setkey(x, seqnames, start, end))
@@ -141,15 +140,10 @@ cell_lines=function(x){x=x[,cell_line := plyr::revalue(cell_type,c("E017"="IMR90
 snps_chromatin_states=list(denisova_chromatin_states,neandertal_chromatin_states,nonarchaics_chromatin_states) %>% 
   lapply(function(x)cell_lines(x))
 
-pop_names=c('denisova','neandertal','png')
-names(snps_chromatin_states)=pop_names
-for (i in seq_along(snps_chromatin_states)){
-  assign(pop_names[i],snps_chromatin_states[[i]],.GlobalEnv)}
-
+names(snps_chromatin_states)=c('denisova','neandertal','png')
 
 filenames_chromhmm=paste0(output_dir,names(snps_chromatin_states),sep='')
 mapply(write.table,snps_chromatin_states, file = filenames_chromhmm,col.names = T, row.names = F, sep = " ", quote = F)
-
 
 ## count number snps per chromatin state 
 asnps_enrichment=function(x,freq){
@@ -278,7 +272,6 @@ pdf(paste(plot_dir,'snps_distribution/asnps_nasnps_ratio.pdf',sep=''),width=7,he
 ratio_plot(snps_nofreqsplit)
 dev.off()
 
-
 ## barplot number of snps per chrom state
 prepare_data=function(x){
   df=copy(x)
@@ -293,13 +286,6 @@ df=Map(mutate,df,'pop'=names(df)) %>% lapply(function(x)setDT(x))
 }
 
 numb_snps_chromstates=prepare_data(snps_chromatin_states)
-
-
-# test=copy(numb_snps_chromstates[[1]])
-# test=test[order(as.factor(readr::parse_number(gsub("^.*\\.", "",x$chrom_state)))),][
-#   ,chrom_state:=gsub('.*_','',chrom_state)
-#   ]
-
 
 log10_numbsnps_plot=function(df){
   x=copy(df)
@@ -348,7 +334,6 @@ dev.off()
 pdf(paste(plot_dir,'snps_distribution/neandertal_log10_numbsnps_chromstates.pdf',sep=''),width = 7,height =2)
 log10_numbsnps_plot(numb_snps_chromstates[[2]])
 dev.off()
-
 
 filenames_allfreq=paste0(paste0(simplified_dir,'all_freq/',sep=''),names(snps_nofreqsplit),sep='')
 mapply(write.table,snps_nofreqsplit, file = filenames_allfreq,col.names = T, row.names = F, sep = " ", quote = F)

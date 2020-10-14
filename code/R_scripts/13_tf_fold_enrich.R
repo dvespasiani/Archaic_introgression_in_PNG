@@ -5,6 +5,7 @@ library(ggthemes);library(ggplot2);library(ggpubr)
 library(viridis);library(viridisLite)
 library(ggrepel)
 
+options(width=150)
 motif_input_dir='./Motifbreak/Tx_and_CREs/TFBSs_disrupted_10neg5/'
 motif_cluster_dir='../Annotation_and_other_files/Motifs_clusters/'
 merging_keys=c('seqnames','start','end')
@@ -30,12 +31,11 @@ read_active_states=function(x){
     )
 }
 
-states=read_active_states('./Chromatin_states/SNPs_chromHMM_annotated/new_set')
+states=read_active_states('./Chromatin_states/SNPs_chromHMM_annotated/')
 
 motif=fread(paste0(motif_cluster_dir,'motifs_clusters',sep=''),sep=' ',header = T)[
   ,motif_id:=ifelse(Motif%like%'HUMAN.H11',Motif,sub(".*_", "", Motif))
   ]
-
 
 read_tfbs_snps=function(x){
   x=as.character(list.files(x,recursive = F,full.names = T)) %>% 
@@ -53,7 +53,6 @@ read_tfbs_snps=function(x){
 }
 
 
-
 combined=read_tfbs_snps(paste(motif_input_dir,'new_set/combined/',sep=''))
 lapply(combined,function(x)x[,c('seqnames','start','end')] %>% unique() %>% nrow())
 
@@ -61,7 +60,6 @@ combined=purrr::map2(combined,states,inner_join,by=c('seqnames','start','end','R
 
 combined_all=copy(combined)
 combined_all=lapply(combined_all,function(x)x=x[,c('cell_line','cell_type'):=NULL] %>% unique())
-
 
 tf_cluster=function(x){
   df=copy(x)
@@ -85,7 +83,7 @@ combined_all_cluster=tf_cluster(combined_all)
 ##-------------------------------------------------------------
 ##    Calculate log2 fold enrichment + fisher/binomial p vals
 ##-------------------------------------------------------------
-
+## ps this is a bit nested  and convoluted. perhaps better splitting into ≠ functions but it works
 fisher_pvalues=function(a){
   pvals=copy(a)
   pvals=pvals[,c(1:2):=NULL]
@@ -246,7 +244,6 @@ combined_high=lapply(combined_high,function(x)x=x[
   ][all_freq>=0.05][,c('cell_line','cell_type'):=NULL] %>% unique())
 
 combined_high_cluster=tf_cluster(combined_high)
-
 
 deni_enrich_high=calculate_enrichment(combined_high_cluster[[1]],combined_high_cluster[[3]])
 deni_enrich_high=deni_enrich_high[,pop:='denisova']
