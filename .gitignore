@@ -13,7 +13,7 @@ code/R_scripts/3_SNPs_distribution_across_genome.R
 code/R_scripts/2_VEP_modification_OoAsnps.R
 code/R_scripts/8_D1_D2_in_png.R
 code/R_scripts/9_D1_D2_enrichment_heatmap.R
-code/R_scripts/9_D1_vs_heatmaps.R
+code/R_scripts/9_D1_vs_D2_heatmaps.R
 code/R_scripts/Jaccard_score_tfs_celltypes.R
 code/R_scripts/combine_naSNPs_tfbs.R
 code/R_scripts/test.R
