@@ -171,7 +171,9 @@ calculate_enrichment=function(x,y){
   
   df_final=cbind(df,df_pvalues)
   
-  df_final=df_final[,qtl_random_ratio_cluster:=test_in_cluster/bkgr_in_cluster][
+  df_final=df_final[
+    ,qtl_random_ratio_cluster:=test_in_cluster/bkgr_in_cluster
+    ][
     ,mean_ratio:=mean(qtl_random_ratio_cluster)
     ][
       ,log2_fold_enrichment:=log2(qtl_random_ratio_cluster/mean_ratio)
