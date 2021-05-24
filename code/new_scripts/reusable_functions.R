@@ -1,3 +1,17 @@
+##-----------
+## vectors 
+##-----------
+range_keys = c('seqnames','start','end')
+cres_states = c('1_TssA','2_TssAFlnk','3_TxFlnk','6_EnhG','7_Enh')
+
+
+## color palette
+my_palette_pop=c(
+    '#C99E10', # denisova
+    '#1E656D', # modern humans
+    '#9B4F0F'  # neandertal
+)
+  
 ## tissue 
 tissue = c(
     'Adipose','BCells','Brain',
@@ -7,6 +21,60 @@ tissue = c(
     'Neurospheres','Other_cells','Smooth_muscle',
     'TCells','Thymus'
 )
+
+tissue_colors = c(
+  "Adipose"='darkorange3',
+  "BCells"='palegreen4',
+  "Brain"='goldenrod3',
+  "Digestive"="plum3",
+  "Epithelial"="orange1",
+  "ES_cells"='hotpink4',
+  "ES_derived_cells"='dodgerblue2',
+  "Heart"="palevioletred2",
+  'IMR90_fetal_lung_fibroblast'='red3',
+  "iPSC"='mediumpurple4',
+  "Mesenchymal"='hotpink3',
+  "Muscle"="indianred",
+  "Myosatellite"='darkorange2',
+  "Neurospheres"='lightgoldenrod2',
+  "Other_cells"="grey60",
+  "Smooth_muscle"="hotpink1",
+  "TCells"='chartreuse4',
+  "Thymus"='yellow2'
+)
+
+
+##-----------
+## functions
+##-----------
+## count SNPs
+count_snps = function(x){x=x[,c(..range_keys)]%>%unique()%>%nrow()}
+
+## Calculate MIAF/DAF
+calculate_maf = function(x){
+    df=copy(x)[
+        ,MAF := ifelse(ancestry=='archaic', ## MIAF for aSNPs
+            ifelse(POP_ARCH_REF > POP_ARCH_ALT,
+            POP_ARCH_REF / (POP_ARCH_REF+POP_ARCH_ALT+POP_NOTARCH_REF+POP_NOTARCH_ALT),
+            POP_ARCH_ALT / (POP_ARCH_REF + POP_ARCH_ALT + POP_NOTARCH_REF + POP_NOTARCH_ALT)
+            ), ## DAF for naSNPs
+            ifelse(ANC == 0, 
+            POP_NOTARCH_ALT / (POP_ARCH_REF+POP_ARCH_ALT+POP_NOTARCH_REF+POP_NOTARCH_ALT),
+            POP_NOTARCH_REF / (`POP_ARCH_REF`+POP_ARCH_ALT+POP_NOTARCH_REF+POP_NOTARCH_ALT))
+            )
+            ][
+                ,state_allele := ifelse(ancestry=='archaic', ## label the state of the main introgressed archaic allele
+                ifelse(
+                    (ANC==0 & POP_ARCH_REF>POP_ARCH_ALT)|(ANC==1 & POP_ARCH_ALT>POP_ARCH_REF),'ancestral',
+                    ifelse(POP_ARCH_REF==POP_ARCH_ALT,'not_determined','derived')
+                    ),
+                    'derived' ## all naSNPs that will be considered are derived. SNPs fixed for the ancestral allele are removed
+                    )
+                    ]
+    return(df)
+
+}
+
 
 ## make tissue column
 group_celltypes = function(x){x=x[,cell_line := plyr::revalue(cell_type,c("E017"="IMR90_fetal_lung_fibroblast", 
@@ -88,6 +156,24 @@ calculate_odds_ratio = function(asnps,nasnps,merging_keys,fulljoin){
     return(fisher_test_results)
 }
 
+
+## adjust pvalues
+adjust_pvalues=function(x){
+  df=copy(x)
+  pvals_df=copy(df)
+  pvals_df=pvals_df$p
+  pvals_df_adjusted=p.adjust(pvals_df,'fdr')%>%as.data.table() %>% setnames('p_adj')
+  pvals_df_adjusted=pvals_df_adjusted[
+    ,p_signif:= ifelse(`p_adj`<=0.0001,'****',
+                             ifelse(`p_adj`>0.0001 &`p_adj`<=0.001,'***',
+                                    ifelse(`p_adj`>0.001 & `p_adj`<=0.01,'**',
+                                           ifelse(`p_adj`>0.01 & `p_adj`<=0.05,'*',' '))))
+    ]
+   df_final=cbind(df,pvals_df_adjusted)
+  return(df_final)
+}
+
+
 ## read tfbs SNPs
 read_tfbs = function(dir,patterns){
   tfbs = list.files(dir,recursive = T,full.names = T,pattern = patterns) %>% 
@@ -117,4 +203,12 @@ read_cres = function(dir,cols,cells){
         cres_selected_cells = lapply(cres,function(x)x=x[cell_line %in% cells])
     return(cres_selected_cells)
     }
+}
+
+
+
+jaccard <- function(a, b) {
+    intersection = length(intersect(a, b))
+    union = length(a) + length(b) - intersection
+    return (intersection/union)
 }

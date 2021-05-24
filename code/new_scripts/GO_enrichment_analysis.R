@@ -12,17 +12,14 @@ library(ggthemes)
 library(ggplot2)
 library(ggpubr)
 library(VennDiagram)
+library(ggrepel)
 
 
-# target_genes_output_dir='./Motifbreak/GREAT_GO_terms/target_genes/'
-# de_target_genes_output_dir='./Motifbreak/GREAT_GO_terms/DE_genes_TFBS_regulated/'
-# top25_go_genes='./Motifbreak/GREAT_GO_terms/top_25_genes_go/'
-
-# table_dir='./Results/Tables/'
+table_dir='./Results/Tables/'
 plot_dir='./Results/Plots/GREAT/'
+
 snps_input_dir = './Chromatin_states/SNPs_chromHMM_annotated'
 columns_to_read = c(1,7:12,4,5,15)
-range_keys=c('seqnames','start','end')
 immune_cells = c('TCells','BCells')
 
 setwd('/data/projects/punim0586/dvespasiani/Archaic_introgression_in_PNG/')
@@ -46,30 +43,24 @@ combined_tfbs = purrr::map2(jaspar_tfbs,hocomoco_tfbs,rbind) %>%
       ,c(..range_keys,'REF','ALT','geneSymbol','providerName','alleleDiff','effect')
       ] %>% unique()
 )
-## then remove duplicates and if same tfbs is disrupted across the two databases keep the one with strongest impact
-combined_tfbs = lapply(combined_tfbs,function(x)x=x[
-  , .SD[which.max(abs(alleleDiff))], by=.(seqnames,start,end,REF,ALT)
-  ]
-)
 
-## now keep only tfbs snps annotated in cres that have MIAF/DAF >=0.2
-highfreq_tfbs_cres = purrr::map2(cres_snps[c(1,3)],combined_tfbs,inner_join,by=c(range_keys,'REF',"ALT"))
-highfreq_tfbs_cres = Map(mutate,highfreq_tfbs_cres,'pop'=names(highfreq_tfbs_cres))%>%
-lapply(
-  function(x)x=x[
+tfbs_cres = purrr::map2(cres_snps,combined_tfbs,function(x,y)inner_join(x,y,by=c(range_keys,'REF',"ALT")))
+tfbs_cres = Map(mutate,tfbs_cres,'pop'=names(tfbs_cres))
+tfbs_cres = lapply(
+  tfbs_cres,function(x)x=x[
     MAF>=0.2
     ][
       ,c(..range_keys)
-      ]%>%unique()
+    ]%>%unique()
 )
 
 ##-----------------
 ## GO enrichment
 ##-----------------
 ## GREAT enrichments
-great_enrichment=function(test,background){
+great_enrichment=function(test){
   test=copy(test) %>% makeGRangesFromDataFrame(keep.extra.columns = T)
-  background = copy(background)%>%rbindlist() %>% makeGRangesFromDataFrame(keep.extra.columns = T)
+  background = copy(tfbs_cres)%>%rbindlist() %>% makeGRangesFromDataFrame(keep.extra.columns = T)
   results=submitGreatJob(
     gr=test,
     bg=background,
@@ -84,33 +75,28 @@ great_enrichment=function(test,background){
   return(list(go_enrichment,target_genes))
 }
 
-densisova_go = great_enrichment(highfreq_tfbs_cres[[1]],highfreq_tfbs_cres)
-neanderthal_go = great_enrichment(highfreq_tfbs_cres[[2]],highfreq_tfbs_cres)
-
+densisova_go = great_enrichment(tfbs_cres[[1]])
+modern_human_go = great_enrichment(tfbs_cres[[2]])
+neanderthal_go = great_enrichment(tfbs_cres[[3]])
 
 ## plot distance from TSS 
-target_genes = list(densisova_go[[2]],neanderthal_go[[2]])%>%
+## if SNP is associated with multiple genes take the closest one
+target_genes = list(densisova_go[[2]],modern_human_go[[2]],neanderthal_go[[2]])%>%
 lapply(
   function(x)x=x[
+    ,.SD[which.max(abs(distTSS))], by=.(seqnames,start,end)
+  ][
     ,log10_abs_dist:= log10(abs(distTSS))
     ]
 )
-names(target_genes) = c('Denisova','Neanderthal')
+names(target_genes) = c('Denisova','Modern_Humans','Neanderthal')
 
 target_genes = Map(mutate,target_genes,pop=names(target_genes))%>%rbindlist()
-
-my_palette_pop=c(
-    '#C99E10', # denisova
-    # '#1E656D', # modern humans
-    '#9B4F0F'  # neandertal
-)
   
-names(my_palette_pop)= c('Denisova','Neanderthal')
-
 pdf(paste(plot_dir,'snp_target_distance.pdf',sep=''),width=10,height = 7)
 ggplot(target_genes, aes(x=log10_abs_dist,fill=pop)) +
     geom_density(alpha=0.5)+
-    scale_fill_manual(name= " ",values = my_palette_pop,labels = c('Denisova','Neanderthal'))+
+    scale_fill_manual(name= " ",values = my_palette_pop,labels = c('Denisova','Modern Humans','Neanderthal'))+
     xlab('Log 10 absolute distance SNP-targets')+ylab('Density')+
     theme(panel.spacing=unit(1, "lines"),
           panel.background =element_rect(fill = 'white', colour = 'black',size=1),
@@ -126,11 +112,118 @@ ggplot(target_genes, aes(x=log10_abs_dist,fill=pop)) +
           axis.line = element_line(color = "black", size = 0, linetype = "solid"))
 dev.off()
 
+## export table with all significant GO enriched terms 
+## and plot the top 30 most enriched terms
+signif_GOs = list(densisova_go[[1]],modern_human_go[[1]],neanderthal_go[[1]])%>%lapply(function(x)x=x[Hyper_Adjp_BH<0.01])
+names(signif_GOs) = c('Denisova','Modern_Humans','Neanderthal')
+signif_GOs = Map(mutate,signif_GOs,pop=names(signif_GOs))
+
+write.xlsx(signif_GOs,paste(table_dir,'Supp_Table_GO_enriched_terms.xlsx',sep=''),append=T)
+
+library(GOSemSim)
+hsGO <- godata('org.Hs.eg.db', ont="BP")
+
+deni_human = mgoSim(signif_GOs[[1]]$ID, signif_GOs[[2]]$ID,semData=hsGO, measure="Wang", combine='BMA')
+nean_human = mgoSim(signif_GOs[[3]]$ID, signif_GOs[[2]]$ID,semData=hsGO, measure="Wang", combine='BMA')
+deni_nean = mgoSim(signif_GOs[[1]]$ID, signif_GOs[[3]]$ID,semData=hsGO, measure="Wang", combine='BMA')
+
+vector_of_scores <- c(deni_human, deni_nean,nean_human)
+matrix_of_scores <- matrix(0,3,3)
+rownames(matrix_of_scores) = c('Denisova','Modern Human','Neanderthal')
+colnames(matrix_of_scores) = c('Denisova','Modern Human','Neanderthal')
+
+matrix_of_scores[ col(matrix_of_scores) < row(matrix_of_scores) ] <- vector_of_scores
+matrix_of_scores <- matrix_of_scores + t(matrix_of_scores)
+diag(matrix_of_scores) <- 1
+
+
+pdf(paste(plot_dir,'GO_semantic_similarity_score.pdf',sep=''),width=10,height = 7)
+ggcorrplot::ggcorrplot(
+  matrix_of_scores,
+  type='lower',
+  lab = TRUE,
+  legend.title = "Wang similarity score",
+  ggtheme =theme(
+    legend.background=element_rect(),
+    axis.ticks=element_blank(),
+    axis.text.x=element_text(angle=0, hjust=1.10),
+    axis.text.y=element_text(angle=0, vjust=0.8),
+    axis.title=element_text(),
+    axis.line = element_line(color = "white",size = 0, linetype = "solid"),
+    panel.background = element_rect(fill = 'white', size = 0.5,colour = 'white'),
+    panel.grid.minor = element_blank(),
+    panel.grid.major = element_blank(),
+    title=element_text()
+    )
+)
+dev.off()
+
+
+go_enrichment_plot = function(df,cols){
+  ggplot(df[1:10,c(1,2,13,14)], aes(x=reorder(name,-log10(Hyper_Adjp_BH)), y=-log10(Hyper_Adjp_BH),fill=pop)) +
+  geom_bar(stat = 'identity',position = 'dodge')+
+  xlab(" ") +ylab("\n -Log10 (P) \n ") +
+  scale_y_continuous(breaks = round(seq(0, max(-log10(df$Hyper_Adjp_BH)), by = 2), 1)) +
+  scale_fill_manual(name= " ",values = cols)+
+  theme(
+    legend.position='none',
+    legend.background=element_rect(),
+    axis.text.x=element_text(angle=0, hjust=1.10),
+    axis.text.y=element_text(angle=0, vjust=0.8),
+    axis.title=element_text(),
+    axis.line = element_line(color = "black",size = 0, linetype = "solid"),
+    panel.background =element_rect(fill = 'white', size = 0.5,colour = 'black'),
+    panel.grid.minor = element_blank(),
+    panel.grid.major = element_blank(),
+    title=element_text()
+    ) +
+  coord_flip()
+  
+}
+
+pdf(paste(plot_dir,'denisova_go.pdf',sep=''),width=10,height = 7)
+go_enrichment_plot(signif_GOs[[1]],my_palette_pop[1])
+dev.off()
+
+pdf(paste(plot_dir,'modernhuman_go.pdf',sep=''),width=10,height = 7)
+go_enrichment_plot(signif_GOs[[2]],my_palette_pop[2])
+dev.off()
+
+pdf(paste(plot_dir,'neanderthal_go.pdf',sep=''),width=10,height = 7)
+go_enrichment_plot(signif_GOs[[3]],my_palette_pop[3])
+dev.off()
+
+##-------------------------------------------------------
+## look at genes associated with significant GO terms
+##-------------------------------------------------------
+ensembl = useMart("ensembl",dataset="hsapiens_gene_ensembl") 
+
+get_signif_targets = function(x){
+  df = copy(x)
+  df=df$gene%>%unique()
+  df=getBM(
+    attributes=c('hgnc_symbol','ensembl_gene_id','go_id'),
+    filters = 'hgnc_symbol', 
+    values=df, 
+    mart = ensembl
+    )%>%as.data.table()
+  return(df)
+}
+
+signif_GOs_targetgenes = split(target_genes,by='pop')%>%lapply(function(y)get_signif_targets(y))
+
+signif_GOs_targetgenes = map2(
+  signif_GOs_targetgenes,signif_GOs,
+  function(x,y)x=x[
+    go_id %in% y$ID
+    ]%>%unique()
+)
+
 ## now look at how many genes are commonly targeted by the different SNPs
-genes = copy(target_genes)%>%lapply(function(x)x=x[,gene]%>%na.omit()%>%unique())
+genes = copy(signif_GOs_targetgenes)%>%lapply(function(x)x=x[,ensembl_gene_id]%>%na.omit()%>%unique())
 venn.diagram(
     x = genes,
-    category.names = c("Denisova",'Neanderthal'),
+    category.names = c("Denisova",'Modern Humans','Neanderthal'),
     filename = paste(plot_dir,'target_genes_venn.png',sep=''),
     output = TRUE ,
     imagetype="png" ,
@@ -139,337 +232,233 @@ venn.diagram(
     resolution = 400,
     lwd = 1,
     col = my_palette_pop,  
-    fill = c(alpha(my_palette_pop[[1]],0.3), alpha(my_palette_pop[[2]],0.3)),
+    fill = c(alpha(my_palette_pop[[1]],0.3), alpha(my_palette_pop[[2]],0.3),alpha(my_palette_pop[[3]],0.3)),
     cex = 0.5,
     fontfamily = "sans",
     cat.cex = 0.3,
     cat.default.pos = "outer",
-    cat.pos = c(-27, 27),
-    cat.dist = c(0.055, 0.055),
+    cat.pos = c(-27,27, 135),
+    cat.dist = c(0.055, 0.055,0.055),
     cat.fontfamily = "sans",
     cat.col = my_palette_pop
 )
 
+## get genes associated with top 40 GOs for cytoscape
+topGOs = lapply(signif_GOs,function(x)x=x[1:40,])
+genes_topGOs = copy(signif_GOs_targetgenes)
+genes_topGOs = map2(
+  genes_topGOs,topGOs,
+  function(x,y)x=x[
+    go_id %in% y$ID
+    ][
+      ,go_id:=NULL
+    ]%>%unique()
+)
+
+##-----------------------------------------
+## check if any of (ALL) the target genes 
+## is DE across ISEA between png and Windo
+##------------------------------------------
+count_genes = function(x){
+  numb_genes = copy(x)[,'ensembl_gene_id'] %>% unique() %>% nrow() 
+  return(numb_genes)
+}
+
+## read mtw kor de genes file
+mtw_kor_de = fread(
+  './DE_genes/DE_genes_MTW_KOR.txt.gz',sep=' ',header = F,drop='V2',
+  col.names = c("ensembl_gene_id","logFC","AveExpr", "t", "P.Value","adj.P.Val", "B"))[
+    adj.P.Val<=0.01
+]
+
+target_genes_de = lapply(
+  signif_GOs_targetgenes,
+  function(x)x=x[
+    mtw_kor_de,on='ensembl_gene_id',nomatch=0
+    ][
+      ,go_id:=NULL
+      ]%>%unique()
+)
+
+## get proportion of target genes that are also DE
+## out of all target genes associated with significant GO terms
+numb_target_signifGO =lapply(signif_GOs_targetgenes,function(x)count_genes(x))
+numb_target_de =lapply(target_genes_de,function(x)count_genes(x))
+
+prop_target_de = purrr::map2(numb_target_de,numb_target_signifGO,function(x,y)x/y*100)
+
+## test if there is a significant enrichment in the numb of DE genes targeted by deni/nean/png vs all human genes
+all_human_ensembl_genes = getBM(attributes='ensembl_gene_id',mart = ensembl)
+
+enrichment_pval=function(x,y){
+
+  numb_targets_de = copy(x)%>%count_genes()
+  numb_targets = copy(y)%>%count_genes()
+  tot_numb_de_genes = copy(mtw_kor_de)%>%count_genes()  
+
+  test=phyper(
+    numb_targets_de-1,
+    tot_numb_de_genes,
+    nrow(all_human_ensembl_genes)-tot_numb_de_genes, ## all non de genes
+    numb_targets,
+    lower.tail = F
+    )
+  return(test)
+}
+
+enrichment_pval(target_genes_de[[1]],signif_GOs_targetgenes[[1]]) # deni
+enrichment_pval(target_genes_de[[2]],signif_GOs_targetgenes[[2]]) # mh
+enrichment_pval(target_genes_de[[3]],signif_GOs_targetgenes[[3]]) # nean
+
+##-----------------------------------------------
+## now compare allele frequencies across ISEA
+##-----------------------------------------------
+
+## get MAF/DIAF of the alleles targeting DE genes in PNG 
+## and then see how many are within W indonesia and compare the allele frequencies
+denisova_in_w_indo = fread('./Original_files_per_region/Denisova/deni_w_indo.gz',sep='\t',header = T,drop=c(11:14))
+neanderthal_in_w_indo = fread('./Original_files_per_region/Neandertal/nean_w_indo.gz',sep='\t',header = T,drop=c(11:14))
+
+modern_humans_w_indo = rbind(
+  denisova_in_w_indo[POP_ARCH_REF+POP_ARCH_ALT==0],
+  neanderthal_in_w_indo[POP_ARCH_REF+POP_ARCH_ALT==0])%>%
+  setorderv(c('CHR','FROM'),1)%>%unique()
+
+## retrieve the continuous MIAF/DAF values (not the rounded ones)
+original_snps = list.files('./filtered_files',full.names = T,recursive = F) %>% lapply(function(y)fread(y,sep='\t',header = T))
+names(original_snps)=c('denisova','modern_human','neanderthal')
+
+tfbs_cres_original = purrr::map2(tfbs_cres,original_snps,function(x,y)x[y,on=c(range_keys),nomatch=0])
+tfbs_cres_original = lapply(tfbs_cres_original,function(x)x=setnames(x,old=7,new='allele_of_interest'))
 
 
+## now first calculate proportion shared 
+## NB: u need to keep Windo aSNPs with instances in archaic haps
+denisova_in_w_indo_asnps = copy(denisova_in_w_indo)[POP_ARCH_REF+POP_ARCH_ALT>0]
+neanderthal_in_w_indo_asnps = copy(neanderthal_in_w_indo)[POP_ARCH_REF+POP_ARCH_ALT>0]
 
-# read_files=function(x){
-#   x=as.character(list.files(x,recursive =F,full.names = T)) %>% 
-#     lapply(function(y)
-#       fread(y,sep = ' ',header = T)[
-#         ,pop:=NULL
-#         ] %>% 
-#         setnames(old=c('CHR','FROM','TO'),new = c('seqnames','start','end')))
+windo_asnps_nasnps =list(denisova_in_w_indo_asnps,modern_humans_w_indo,neanderthal_in_w_indo_asnps)%>%
+lapply(
+  function(x)x%>%setnames(old=c(1:3),new=c(range_keys))
+)
+
+## now get shared variants, then calculate and plot the % of shared variants
+shared_variants = purrr::map2(tfbs_cres_original,windo_asnps_nasnps,function(x,y)x[y,on=c(range_keys,'REF','ALT'),nomatch=0])
+
+numb_shared_snps = lapply(shared_variants,function(x)x[,c(1:3)]%>%unique()%>%nrow())
+numb_snps_with_targets = lapply(tfbs_cres_original,function(x)x[,c(1:3)]%>%unique()%>%nrow())
+
+prop_shared = purrr::map2(numb_shared_snps,numb_snps_with_targets,function(x,y)x/y)%>%
+lapply(function(z)data.table(fraction=z,type='shared'))
+
+prop_specific = copy(prop_shared)%>%lapply(function(x)x=x[,fraction:=1-fraction][,type:='specific'])
+
+prop_specific = Map(mutate,prop_specific,pop=names(prop_specific))%>%rbindlist()
+prop_shared = Map(mutate,prop_shared,pop=names(prop_shared))%>%rbindlist()
+
+prop_snps_windo_png = rbind(prop_shared,prop_specific)
+
+pdf(paste(plot_dir,'fraction_highfreq_tfbs_shared_snps_png_windo.pdf',sep=''),width=7,height = 7)
+ggplot(prop_snps_windo_png, aes(x=pop,y=fraction,fill=type)) +
+geom_bar(stat='identity')+
+scale_fill_manual(
+  values=c('lightskyblue2','plum2'),
+  name=' ',labels=c('Shared','Specific')
+  )+
+  ylab('\n Fraction of variants \n')+ xlab('\n \n')+ 
+  theme(
+    panel.spacing=unit(1, "lines"),
+    panel.background =element_rect(fill = 'white', colour = 'black',size=1),
+    panel.grid.minor = element_blank(),
+    panel.grid.major = element_blank(),
+    legend.text = element_text(),
+    legend.title = element_text(),
+    legend.margin = margin(c(0.5, 2, 8, 25)),
+    legend.spacing.x = unit(0.5, 'cm'),
+    axis.text.y = element_text(),
+    axis.title.y = element_text(hjust=0.5),
+    axis.text=element_text(),
+    axis.line = element_line(color = "black", size = 0, linetype = "solid")
+  )
+dev.off()
+
+
+## calculate MIAF/DAF for variants in Windo
+shared_variants = lapply(
+  shared_variants,function(x)x=x[
+    ,Windo_MIAF:=ifelse(
+      allele_of_interest=='alt',
+      POP_ARCH_ALT / (POP_ARCH_REF + POP_ARCH_ALT + POP_NOTARCH_REF + POP_NOTARCH_ALT),
+      POP_ARCH_REF / (POP_ARCH_REF+ POP_ARCH_ALT+POP_NOTARCH_REF+POP_NOTARCH_ALT)
+      )
+      ][
+        ,Windo_DAF:=ifelse(
+          allele_of_interest=='alt',
+          POP_NOTARCH_ALT / (POP_ARCH_REF+POP_ARCH_ALT+POP_NOTARCH_REF+POP_NOTARCH_ALT),
+          POP_NOTARCH_REF / (`POP_ARCH_REF`+POP_ARCH_ALT+POP_NOTARCH_REF+POP_NOTARCH_ALT)
+          )
+          ]%>%unique()
+)
+
+all_shared_snps = list(
+  shared_variants[[1]][,c(..range_keys,'MAF','Windo_MIAF')],
+  shared_variants[[2]][,c(..range_keys,'MAF','Windo_DAF')]%>%setnames(old='Windo_DAF',new='Windo_MIAF'),
+  shared_variants[[3]][,c(..range_keys,'MAF','Windo_MIAF')]
+)
+names(all_shared_snps) = c('denisova','modern_humans','neanderthal')
+all_shared_snps = Map(mutate,all_shared_snps,pop=names(all_shared_snps))%>%rbindlist()
+
+
+pdf(paste(plot_dir,'png_windo_snp_freq_corr.pdf',sep=''),width=25,height = 12)
+ggplot(all_shared_snps, aes(x=MAF,y=Windo_MIAF,group=pop)) +
+geom_point(aes(color=pop),size=2)+
+# geom_abline() +
+scale_color_manual(name= " ",values = my_palette_pop)+
+xlab('Frequency PNG')+ylab('Frequency Windonesia')+
+facet_wrap(pop~.,ncol=3)+
+theme(
+  panel.spacing=unit(1, "lines"),
+  panel.background =element_rect(fill = 'white', colour = 'black',size=1),
+  panel.grid.minor = element_blank(),
+  panel.grid.major = element_blank(),
+  legend.text = element_text(),
+  legend.title = element_text(),
+  legend.margin = margin(c(0.5, 2, 8, 25)),
+  legend.spacing.x = unit(0.5, 'cm'),
+  axis.text.y = element_text(),
+  axis.title.y = element_text(hjust=0.5),
+  axis.text=element_text(),
+  axis.line = element_line(color = "black", size = 0, linetype = "solid")
+  )
+dev.off()
+
+
+## get papuan specific variants
+## and potential target genes they might regulate
+png_specific = purrr::map2(tfbs_cres_original,shared_variants,function(x,y)x[!y,on=c(range_keys,'REF','ALT')])
+
+png_specific_with_targets = lapply(
+  png_specific,function(x)x=x[
+    target_genes,on=c(range_keys),nomatch=0
+  ]
   
-#   pop_names=c('denisova','neanderthal','png')
-#   names(x)=pop_names
-#   for (i in seq_along(x)){
-#     assign(pop_names[i],x[[i]],.GlobalEnv)}
-#   return(x)
-  
-# }
+)
 
-# original_snps=read_files('./Grouped_filtered_snps/new_set/') 
+OAS_snps = copy(png_specific_with_targets[[1]])[gene %like% 'OAS']
+OAS_snps_in_windo =copy(OAS_snps)%>%inner_join(denisova_in_w_indo, by=c('seqnames'='CHR','start'='FROM','end'='TO','REF','ALT'))
 
+OAS_snps_tfs = OAS_snps[
+  combined_tfbs[[1]],on=c(range_keys,'REF','ALT'),nomatch=0
+  ][
+    ,c('width','strand','log10_abs_dist','pop','providerName','alleleDiff','effect'):=NULL
+]%>%unique()
 
-# read_active_states=function(x){
-#   x=as.character(list.files(x,recursive = F,full.names = T)) %>%
-#     lapply(function(y)
-#       fread(y,sep=' ',header = T,select=c('seqnames','start','end','chrom_state','cell_type','cell_line','all_freq'))[
-#         chrom_state%in%c('2_TssAFlnk','3_TxFlnk',"6_EnhG","7_Enh")
-#         ][
-#           cell_line%in%c('TCells','BCells')
-#           ][
-#             ,c('chrom_state','cell_line','cell_type'):=NULL
-#             ] %>% unique()
-#     )
-# }
+## now read the list of dbSNPs and see if any of these have associated rsids
+dbsnps = fread('../Annotation_and_other_files/human_genome/reduced_hg19_dbSNPs_150.txt.gz',sep='\t')%>%
+setnames(old=c('ref','alt'),new=c('REF','ALT'))
 
-# states=read_active_states('./Chromatin_states/SNPs_chromHMM_annotated/new_set') 
+OAS_snps = OAS_snps[dbsnps,on=c(range_keys[-3],'REF','ALT'),nomatch=0]
 
-# read_tfbs=function(x,pwm_effect){
-#   x=as.character(list.files(x,full.names = T,recursive = F)) %>% 
-#     lapply(function(y)
-#       fread(y,sep=' ',header = T)[
-#         !dataSource%like%'HOCOMOCOv11-secondary-D'][
-#           ,end:=start+1
-#         ][
-#           ,c('seqnames','start','end','effect')
-#         ][effect%in%pwm_effect] %>% unique())
-  
-#   pop_names=c('denisova','neandertal','png')
-#   names(x)=pop_names
-#   for (i in seq_along(x)){
-#     assign(pop_names[i],x[[i]],.GlobalEnv)}
-  
-#   x=purrr::map2(x,states,merge,by=c('seqnames','start','end')) 
-#   x=lapply(x,function(y)y=as.data.table(y)[,all_freq:=round(all_freq,1)][all_freq>=allele_frequency][
-#     ,c('all_freq','effect'):=NULL
-#     ] %>% unique())
-#   return(x)
-# }
-
-# tfbs=read_tfbs('./Motifbreak/Tx_and_CREs/TFBSs_disrupted_10neg5/new_set/combined','strong')
-# lapply(tfbs,function(y)y=y[,c(1:3)] %>% unique() %>% nrow())
-
-# ## GREAT enrichments
-# background=function(x){
-#   df=copy(x) %>% rbindlist()%>% 
-#     makeGRangesFromDataFrame(keep.extra.columns = T)
-# }
-# deni_background=background(tfbs[c(1,3)])
-# nean_background=background(tfbs[c(2,3)])
-# png_background=background(tfbs)
-
-# great_enrichment=function(test,background){
-#   test=copy(test) %>% makeGRangesFromDataFrame(keep.extra.columns = T)
-#   result=submitGreatJob(gr=test,
-#                    bg=background,
-#                    species = "hg19",
-#                    rule= "twoClosest", 
-#                    adv_twoDistance = 1000,
-#                    includeCuratedRegDoms = T,
-#                    request_interval=10)
-
-# }
-# deni_great=great_enrichment(tfbs[[1]],deni_background)
-# nean_great=great_enrichment(tfbs[[2]],nean_background)
-# png_great=great_enrichment(tfbs[[3]],png_background)
-
-# snps_great=list(deni_great,nean_great,png_great)
-
-# GO_tables=function(x){
-#   df=copy(x)
-#   df=lapply(df,function(y)
-#     y=getEnrichmentTables(y,ontology='GO Biological Process'))
-  
-# df_list=list(df[[1]][[1]],df[[2]][[1]],df[[3]][[1]])
-# df_list=lapply(df_list,function(x)x=as.data.table(x)[Hyper_Adjp_BH<=0.01])
-# pop_names=c('denisova','neandertal','png')
-#   names(df_list)=pop_names
-#   for (i in seq_along(df_list)){
-#     assign(pop_names[i],df_list[[i]],.GlobalEnv)}
-#   return(df_list)
-# }
-
-# snps_go_enrichment=GO_tables(snps_great)
-# head(snps_go_enrichment[[1]],30)
-# head(snps_go_enrichment[[2]],30)
-
-# write.xlsx(snps_go_enrichment,paste(table_dir,'Supp_Table_10_GO_enriched_terms.xlsx',sep=''),append=T)
-
-# ## plot go bp first 25 terms for simplicity of visualization
-# go_bp=Map(mutate,snps_go_enrichment,'pop'=names(snps_go_enrichment))
-# go_bp=lapply(go_bp,function(x) x=x[1:30,c(1,2,13,14)] %>% as.data.table())
-
-# go_enrichment_plot=function(x,y){
-#   ggplot(x, aes(x=reorder(name,-log10(Hyper_Adjp_BH)), y=-log10(Hyper_Adjp_BH),fill=pop)) +
-#     geom_bar(stat = 'identity',position = 'dodge')+
-#     xlab(" ") +
-#     ylab("\n -Log10 (P) \n ") +
-#     scale_y_continuous(breaks = round(seq(0, max(-log10(x$Hyper_Adjp_BH)), by = 2), 1)) +
-#     scale_fill_manual(name= " ",values=y)+
-#    theme(
-#       legend.position='none',
-#       legend.background=element_rect(),
-#       axis.text.x=element_text(angle=0, hjust=1.10),
-#       axis.text.y=element_text(angle=0, vjust=0.8),
-#       axis.title=element_text(),
-#       axis.line = element_line(color = "black",size = 0, linetype = "solid"),
-#      panel.background =element_rect(fill = 'white', size = 0.5,colour = 'black'),
-#       panel.grid.minor = element_blank(),
-#       panel.grid.major = element_blank(),
-#       title=element_text()) +
-#     coord_flip()
-  
-# }
-
-# deni_go_plot=go_enrichment_plot(go_bp[[1]],'#C99E10')
-# pdf(paste(plot_dir,'deni_go_plot.pdf',sep=''),width=10,height = 7)
-# deni_go_plot
-# dev.off()
-
-# # get list of target genes 
-# target_genes= function(snps){
-#   genes=lapply(snps,function(x)x=plotRegionGeneAssociationGraphs(x,type=1,request_interval = 10))
-#   genes=lapply(genes,function(x)as.data.table(x) %>% na.omit() %>% unique())
-  
-#   pop_names=c('denisova','neandertal','png')
-#   names(genes)=pop_names
-#   for (i in seq_along(genes)){
-#     assign(pop_names[i],genes[[i]],.GlobalEnv)}
-#   return(genes)
-#   }
-
-# snps_gene_targets=target_genes(snps_great)
-
-# filenames=paste0(target_genes_output_dir,names(snps_gene_targets),sep='')
-# mapply(write.table,snps_gene_targets, file = filenames,col.names = T, row.names = F, sep = " ", quote = F)
-
-# ## Fetch TFBS-target genes related to the significant GO terms
-# significant_go_terms=copy(snps_go_enrichment) %>%
-#   lapply(function(x)
-#   x=as.data.table(x)[
-#     Hyper_Adjp_BH<=0.01
-#   ][,1] %>% unique()
-# )
-
-# signif_goterms=lapply(significant_go_terms,function(x)x=x$ID)
-
-# ensembl = useMart("ensembl",dataset="hsapiens_gene_ensembl") 
-
-# genes_assoc_sign_gos=lapply(signif_goterms,function(x)
-#   x=getBM(attributes=c('hgnc_symbol','ensembl_gene_id'),filters = 'go', values=x, mart = ensembl))
-# genes_assoc_sign_gos=lapply(genes_assoc_sign_gos,function(x)setDT(x))
-
-# target_genes_assoc_sign_gos=purrr::map2(snps_gene_targets,genes_assoc_sign_gos,inner_join,by=c('gene'='hgnc_symbol'))
-# target_genes_assoc_sign_gos=lapply(target_genes_assoc_sign_gos,function(x)setDT(x))
-
-# ## get deni genes for cytoscape
-# all_deni_targets=copy(target_genes_assoc_sign_gos[[1]])
-# all_deni_targets=all_deni_targets$gene%>%unique()
-
-# deni_genes_for_cytoscape=copy(snps_gene_targets[[1]])
-# deni_genes_for_cytoscape=getBM(attributes=c('hgnc_symbol','go_id'),filters = 'hgnc_symbol', values=deni_genes_for_cytoscape$gene, mart = ensembl)
-# deni_top25_go=copy(snps_go_enrichment[[1]][c(1:30),])
-
-# deni_genes_for_cytoscape=semi_join(deni_genes_for_cytoscape,deni_top25_go,by=c('go_id'='ID'))
-# deni_genes_for_cytoscape=deni_genes_for_cytoscape[,1] %>% unique()
-
-# write.table(deni_genes_for_cytoscape,paste(top25_go_genes,'denisova_top25_genes',sep=''),col.names = F,quote = F,row.names = F)
-# write.table(all_deni_targets,paste(top25_go_genes,'denisova_all_targets',sep=''),col.names = F,quote = F,row.names = F)
-# ###-------------------------------------------------------------------------------
-# ##     see if any of these target genes is DE between Mentawai and Koorowai
-# ##   then look at the fraction of these snps that segregates also in W indonesia
-# ###-------------------------------------------------------------------------------
-# mtw_kor_de=fread('./DE_genes/DE_genes_MTW_KOR.txt',sep=' ',header = F,drop='V2',
-#                  col.names = c("genes","logFC","AveExpr", "t", "P.Value","adj.P.Val", "B"))[
-#                    adj.P.Val<=0.01
-#                    ]
-# tfbs_DE_targets=function(x){
-#   x=inner_join(x,mtw_kor_de,by=c('ensembl_gene_id'='genes')) %>% 
-#     as.data.table()
-#   x=x[,c(1:3,6:8)] %>% unique()
-  
-# }
-
-# DE_targets=lapply(target_genes_assoc_sign_gos,function(x)tfbs_DE_targets(x))
-
-# ## test for enrichment in numb de genes targeted by deni/nean/png vs all human genes
-# ## get all human genes via annotatr
-# annots = c('hg19_basicgenes')
-# human_genes = annotatr::build_annotations(genome = 'hg19', annotations = annots) %>%
-#   as.data.table()
-# human_genes=human_genes[,'symbol'] %>% na.omit() %>% unique() %>% nrow()
-
-# enrichment_pval=function(x,y){
-  
-#   numb_de_genes_per_pop=copy(x)[,'ensembl_gene_id'] %>% unique() %>% nrow() 
-#   numb_genes_associated_go=copy(y)[,'ensembl_gene_id'] %>% unique() %>% nrow()
-#   tot_numb_de_genes=copy(mtw_kor_de)[,'genes'] %>% unique() %>% nrow() 
-  
-#   test=phyper(numb_de_genes_per_pop-1,tot_numb_de_genes,human_genes-tot_numb_de_genes,numb_genes_associated_go,lower.tail = F)
-#   return(test)
-# }
-
-# enrichment_pval(DE_targets[[1]],target_genes_assoc_sign_gos[[1]]) ## 0.0020
-# enrichment_pval(DE_targets[[2]],target_genes_assoc_sign_gos[[2]]) ## 0.049
-# enrichment_pval(DE_targets[[3]],target_genes_assoc_sign_gos[[3]]) ## 1.396314e-15
-
-# lapply(DE_targets,function(x)x=x[,'gene']%>%unique()%>%nrow())
-# lapply(target_genes_assoc_sign_gos,function(x)x=x[,'gene']%>%unique()%>%nrow())
-
-# ## get now alleles in PNG 
-# DE_targets=purrr:::map2(DE_targets,original_snps,inner_join,by=c('seqnames','start','end')) %>% 
-#   lapply(function(x)setDT(x))
-# lapply(DE_targets,function(x)x=x[,'gene'] %>% unique() %>% nrow())
-
-# de_target_genes=copy(DE_targets) %>% lapply(function(x)x=x[,c(4,6)] %>% unique())
-
-# # de_filenames=paste0(de_target_genes_output_dir,names(de_target_genes),sep='')
-# # mapply(write.table,de_target_genes, file = de_filenames,col.names = T, row.names = F, sep = " ", quote = F)
-
-# ## see how many are within W indonesia
-# denisova_in_w_indo=fread('./Original_files_per_region/Denisova/deni_w_indo.gz',sep='\t',header = T,drop=c(11:14))
-# neandertal_in_w_indo=fread('./Original_files_per_region/Neandertal/nean_w_indo.gz',sep='\t',header = T,drop=c(11:14))
-
-# shared_snps=function(de,windo_snps){
-#   de=de[,c('seqnames','start','end','gene')]  %>% 
-#     inner_join(windo_snps,by=c('seqnames'='CHR','start'='FROM','end'='TO')) %>% 
-#     filter(`POP_ARCH_REF`+`POP_ARCH_ALT`>1) %>% # removes singletons
-#     as.data.table()
-#   de=de[
-#     ,c(1:3)
-#     ][
-#       ,'distribution':='shared'
-#       ] %>% unique()
-# }
-
-
-# deni_shared=shared_snps(DE_targets[[1]],denisova_in_w_indo) 
-# nean_shared=shared_snps(DE_targets[[2]],neandertal_in_w_indo)
-
-# # barplot alleles shared between png and w indo
-# windo_png=function(x,y){
-#   png_specific=copy(x)%>% 
-#     anti_join(y[,c(1:3)],by=c('seqnames','start','end')) %>%
-#     as.data.table()
-#   png_specific=png_specific[
-#     ,'distribution':='png'
-#     ][
-#       ,c('seqnames','start','end','distribution')
-#       ] %>% unique()
-#   isea_distribution=rbind(png_specific,y)
-#   isea_distribution=isea_distribution[
-#     ,'tot_snps':=.N
-#     ][
-#       ,'tot_snps_per_condition':=.N,by=.(distribution)
-#       ][
-#         ,'distribution_fraction':=tot_snps_per_condition/tot_snps
-#         ][
-#           ,c('distribution','distribution_fraction','tot_snps','tot_snps_per_condition')
-#           ] %>% unique()
-#   return(isea_distribution)
-# }
-
-
-# windo_png_denisova=windo_png(DE_targets[[1]],deni_shared)[,'pop':='Denisova']
-# windo_png_neandertal=windo_png(DE_targets[[2]],nean_shared)[,'pop':='Neandertal']
-
-# windo_png_archaics=rbind(windo_png_neandertal,windo_png_denisova)
-
-# shared_plot=ggplot(windo_png_archaics,aes(x=pop,y=distribution_fraction,fill=distribution))+
-#   geom_bar(stat='identity')+
-#   scale_fill_manual(values=c('lightskyblue2','plum2'),
-#                     name=' ',labels=c('Papuan specific','Shared'))+
-#   ylab('\n Fraction of TFBS-SNPs \n')+ xlab('\n \n')+
-#   theme(axis.text.x = element_text(hjust = 1,angle = 40),
-#         axis.text.y = element_text(),
-#         axis.title.y = element_text(hjust=0.5),
-#         axis.text=element_text(),
-#         legend.text = element_text(),
-#         legend.title = element_text(),
-#         legend.spacing.x = unit(0.5, 'cm'),
-#         panel.background =element_rect(fill = 'white', size = 1,colour = 'black'),
-#         panel.grid.minor = element_blank(),
-#         panel.grid.major = element_blank(),
-#         axis.line = element_line(color = "black", size = 0, linetype = "solid"))
-
-
-
-# pdf(paste(plot_dir,'TFBS_DE_genes_ISEA_distribution.pdf',sep=''),width = 7,height = 7)
-# shared_plot
-# dev.off()
-
-
-# ## get OAS genes TFBS-snps
-# OAS_snps=copy(target_genes_assoc_sign_gos[[1]])[gene%in%c('OAS2','OAS3')] %>%  ## only for these genes as they are DE 
-#   inner_join(tfbs[[1]],by=c('seqnames','start','end'))
-# OAS_snps_mtw=inner_join(OAS_snps,denisova_in_w_indo,by=c('seqnames'='CHR','start'='FROM','end'='TO')) %>% as.data.table()
-
-# OAS_snps_mtw_png=OAS_snps_mtw[original_snps[[1]],on=c('seqnames','start','end','REF',"ALT",'ANC'),nomatch=0] ## freq difference between mtw and krw
-
-
-
+write.table(OAS_snps[,-c(9,10,12,13)],'./Results/Tables/OAS_snps.txt',sep='\t',quote=F,row.names=F,col.names=T)
 
 

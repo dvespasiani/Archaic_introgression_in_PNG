@@ -14,10 +14,11 @@ library(ggpubr)
 
 setwd('/data/projects/punim0586/dvespasiani/Archaic_introgression_in_PNG/')
 options(width = 150)
-range_keys = c('seqnames','start','end')
-columns_to_read = c(range_keys,'REF','ALT','chrom_state','cell_type','cell_line')
 
-cres_states = c('1_TssA','2_TssAFlnk','3_TxFlnk','6_EnhG','7_Enh')
+columns_to_read = c(range_keys,'REF','ALT','chrom_state','MAF')
+
+scripts_dir = './scripts/'
+source(paste(scripts_dir,'reusable_functions.R',sep=''))
 
 ## specify dirs
 input_dir = './Chromatin_states/SNPs_chromHMM_annotated'
@@ -57,28 +58,39 @@ names(snps_chrom_states) = gsub("\\..*","",list.files(input_dir,recursive = F,fu
 
 snps_cres_states = copy(snps_chrom_states)%>%lapply(
   function(x)x=x[
-    chrom_state %in% c("4_Tx","5_TxWk")
+    ,MAF:=round(MAF,2)
     ][
-      ,c('chrom_state','cell_type'):=NULL
+      chrom_state %in% cres_states & MAF>= 0.2
+      ][
+      ,c('chrom_state'):=NULL
     ]%>%unique()
 )
 
-cres_snps = copy(snps_cres_states)%>%lapply(function(x)x=x[,cell_line:=NULL]%>%unique())
-cres_snps = Map(mutate,cres_snps,pop=names(cres_snps))
-
-## now look at how many SNPs have been identified in GTEx
-cres_snps_eqtls = lapply(
-  cres_snps,function(x)x=x[
+## get eqtls overlap 
+eqtl_overlap = function(x){
+  overlap = copy(x)
+  overlap = lapply(
+  overlap,function(x)x=x[
     cis_eqtl_snps_hg19,on=c(columns_to_read[c(1,2,4,5)]),nomatch=0
     ][
-      ,i.end:=NULL
-    ]
-)
+      ,c(1:6)
+    ]%>%unique()
+    )
+  overlap = Map(mutate,overlap,pop=names(overlap))
+  return(overlap)
 
-lapply(cres_snps_eqtls,function(x)nrow(x[,c(1:3)]%>%unique()))
-# 72 (0.12%) denisova
-# 151 (0.41) neanderthal
-# 1104 (0.44) modern humans
+}
+cres_snps_eqtls = eqtl_overlap(snps_cres_states)
 
+numb_highfreq_eqtls = lapply(cres_snps_eqtls,function(x)nrow(x[,c(1:3)]%>%unique()))
+numb_highfreq_cres_snps = lapply(snps_cres_states,function(x)nrow(x[,c(1:3)]%>%unique()))
 
-## look at maf distribution of these variants to see if they are high-freq alleles
+prop_highfreq_eqtls = purrr::map2(numb_highfreq_eqtls,numb_highfreq_cres_snps,function(x,y)x/y*100)
+
+## perform same analysis but on all variants 
+all_snps_eqtls = eqtl_overlap(snps_chrom_states)
+
+numb_allsnps_eqtls = lapply(all_snps_eqtls,function(x)nrow(x[,c(1:3)]%>%unique()))
+numb_allsnps = lapply(snps_chrom_states,function(x)nrow(x[,c(1:3)]%>%unique()))
+
+prop_allsnps_eqtls = purrr::map2(numb_allsnps_eqtls,numb_allsnps,function(x,y)x/y*100)

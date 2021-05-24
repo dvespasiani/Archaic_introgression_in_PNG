@@ -47,30 +47,29 @@ n_aSNPs = copy(all_snps[[2]])[!naSNPs,on=range_keys][ancestry != 'non_archaic']
 ## remove SNPs with unknown ANC 
 ## calculate MIAF/DAF and remove rare variants
 ## determine whether the main alleles are derived or ancestral
-sorted_SNPs = list(d_aSNPs,n_aSNPs,naSNPs)%>%lapply(function(x)x=x[
-  !ANC=='-1'
-  ][
-    ,MAF := ifelse(ancestry=='archaic', ## MIAF for aSNPs
-      ifelse(POP_ARCH_REF > POP_ARCH_ALT,
-        POP_ARCH_REF / (POP_ARCH_REF+POP_ARCH_ALT+POP_NOTARCH_REF+POP_NOTARCH_ALT),
-        POP_ARCH_ALT / (POP_ARCH_REF + POP_ARCH_ALT + POP_NOTARCH_REF + POP_NOTARCH_ALT)
-      ), ## DAF for naSNPs
-      ifelse(ANC == 0, 
-      POP_NOTARCH_ALT / (POP_ARCH_REF+POP_ARCH_ALT+POP_NOTARCH_REF+POP_NOTARCH_ALT),
-      POP_NOTARCH_REF / (`POP_ARCH_REF`+POP_ARCH_ALT+POP_NOTARCH_REF+POP_NOTARCH_ALT))
-      )
-  ][
-    ,state_allele := ifelse(ancestry=='archaic', ## label the state of the main introgressed archaic allele
-      ifelse(
-        (ANC==0 & POP_ARCH_REF>POP_ARCH_ALT)|(ANC==1 & POP_ARCH_ALT>POP_ARCH_REF),'ancestral',
-        ifelse(POP_ARCH_REF==POP_ARCH_ALT,'not_determined','derived')
-      ),
-      'derived' ## all naSNPs that will be considered are derived. SNPs fixed for the ancestral allele are removed
-    )
-  ][
-    MAF >= 0.05 ## keep only variants having MIAF/DAF >= 0.05
-  ]
-)
+sorted_SNPs = list(d_aSNPs,n_aSNPs,naSNPs)%>%lapply(function(x)x=x[!ANC=='-1']%>%calculate_maf()%>%subset(MAF>=0.05))
+#   ][
+#     ,MAF := ifelse(ancestry=='archaic', ## MIAF for aSNPs
+#       ifelse(POP_ARCH_REF > POP_ARCH_ALT,
+#         POP_ARCH_REF / (POP_ARCH_REF+POP_ARCH_ALT+POP_NOTARCH_REF+POP_NOTARCH_ALT),
+#         POP_ARCH_ALT / (POP_ARCH_REF + POP_ARCH_ALT + POP_NOTARCH_REF + POP_NOTARCH_ALT)
+#       ), ## DAF for naSNPs
+#       ifelse(ANC == 0, 
+#       POP_NOTARCH_ALT / (POP_ARCH_REF+POP_ARCH_ALT+POP_NOTARCH_REF+POP_NOTARCH_ALT),
+#       POP_NOTARCH_REF / (`POP_ARCH_REF`+POP_ARCH_ALT+POP_NOTARCH_REF+POP_NOTARCH_ALT))
+#       )
+#   ][
+#     ,state_allele := ifelse(ancestry=='archaic', ## label the state of the main introgressed archaic allele
+#       ifelse(
+#         (ANC==0 & POP_ARCH_REF>POP_ARCH_ALT)|(ANC==1 & POP_ARCH_ALT>POP_ARCH_REF),'ancestral',
+#         ifelse(POP_ARCH_REF==POP_ARCH_ALT,'not_determined','derived')
+#       ),
+#       'derived' ## all naSNPs that will be considered are derived. SNPs fixed for the ancestral allele are removed
+#     )
+#   ][
+#     MAF >= 0.05 ## keep only variants having MIAF/DAF >= 0.05
+#   ]
+# )
 names(sorted_SNPs) = c('denisova','neanderthal','humans')
 
 

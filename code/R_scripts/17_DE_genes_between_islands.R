@@ -66,10 +66,6 @@ signif_go_target_genes=as.character(list.files('./target_genes/',recursive = F,f
 
 
 # load irene's file and fetch only the DE genes
-# smb_kor_de=fread('./Natri_H_et_al_2020_data/topTable.voomNoNorm.tmm.filtered.dup_corrected.SMB-KOR.txt',sep=' ',header = F,drop='V2',
-#                  col.names = c("genes","logFC","AveExpr", "t", "P.Value","adj.P.Val", "B"))[
-#                    adj.P.Val<0.05
-#                    ]
 mtw_kor_de=fread('./Natri_H_et_al_2020_data/topTable.voomNoNorm.tmm.filtered.dup_corrected.MTW-KOR.txt',sep=' ',header = F,drop='V2',
                  col.names = c("genes","logFC","AveExpr", "t", "P.Value","adj.P.Val", "B"))[
                    adj.P.Val<0.05
