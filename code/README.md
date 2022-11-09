@@ -7,7 +7,6 @@
 ```
 wget -r --no-parent -A '*coreMarks_mnemonics.bed.gz*' https://egg2.wustl.edu/roadmap/data/byFileType/chromhmmSegmentations/ChmmModels/coreMarks/jointModel/final/ 
 ```
-
 ## Workflow (not super detailed)
 * Sort SNPs by ancestry and filter them in order to yield a high-confidence set of archaic variants
 * Annotate SNPs across genome and chromatin functional elements, comparing SNPs impact across cells
